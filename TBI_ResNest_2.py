@@ -34,12 +34,16 @@ class ResNest:
 
         with tf.GradientTape() as tape:
             logits = self.resModel(x)
+            # print('y.shape = {}'.format(y.shape))
+            # print('logits.shape = {}'.format(logits.shape))
             smce = self.loss(y_true=y, y_pred=logits)
+            # loss = tf.math.reduce_mean(smce)
 
         pred = tf.math.argmax(logits, axis=-1)
         correct_pred = tf.equal(pred, tf.math.argmax(y, axis=-1))
         correct_pred = tf.reshape(correct_pred, [-1])
         accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+        # print(pred)
 
         if train:
             gradients = tape.gradient(smce, self.resModel.trainable_variables)
@@ -70,33 +74,47 @@ class ResNest:
         status = ckpt.restore(latest_ckpt)
         status.expect_partial()
 
-    def model(self, verbose=False):
-
-        img_input = tf.keras.layers.Input(shape=[self.height, self.width, self.channel])
+    def model(self):
+        inputs = []
+        imp_layers = []
+        for i in range(0, 10):
+            imp = tf.keras.layers.Input(shape=[self.height, self.width, self.channel])
+            imp_layers.append(imp)
+            inputConv = tf.keras.layers.Conv2D(32, 3, strides=1, padding='SAME', use_bias=False,
+                                               name='inpConv_%d' % i)(imp)
+            input_act = tf.keras.layers.ELU(name='inpELU_%d' % i)(inputConv)
+            inputs.append(input_act)
+        img_input = None
+        for idx_i, inputi in enumerate(inputs):
+            if idx_i == 0:
+                img_input = inputi
+            else:
+                img_input += inputi
         conv1 = tf.keras.layers.Conv2D(16, 3, strides=1, padding='SAME', name='Conv1')(img_input)
+        # conv1_bn = tf.keras.layers.BatchNormalization(name="%s_bn" % "conv1")(conv1)
         conv1_act = tf.keras.layers.ELU(name='Conv1_relu')(conv1)
         convtmp_1 = tf.keras.layers.Conv2D(32, 3, strides=1, padding='SAME', name='conv2_1_1')(conv1_act)
-        # convtmp_1bn = tf.keras.layers.BatchNormalization(name="conv2_1_1bn")(convtmp_1)
-        convtmp_1act = tf.keras.layers.ELU(name='conv2_1_1elu')(convtmp_1)
+        convtmp_1bn = tf.keras.layers.BatchNormalization(name="conv2_1_1bn")(convtmp_1)
+        convtmp_1act = tf.keras.layers.ELU(name='conv2_1_1elu')(convtmp_1bn)
         convtmp_2 = tf.keras.layers.Conv2D(32, 3, strides=1,
                                            padding='SAME', name='conv2_1_2')(convtmp_1act)
         convtmp_2bn = tf.keras.layers.BatchNormalization(name='conv2_1_2bn')(convtmp_2)
         convtmp_2act = tf.keras.layers.ELU(name='conv2_1_2elu')(convtmp_2bn)
         conv1_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2, name='pool_1')(convtmp_2act)
         conv2_1 = self.residual_S(conv1_pool, ksize=self.ksize,  outchannel=64,
-                                  radix=self.radix, kpaths=self.kpaths, name="conv2_1", verbose=verbose)
+                                  radix=self.radix, kpaths=self.kpaths, name="conv2_1")
         conv2_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2, name='pool_2')(conv2_1)
         conv2_2 = self.residual_S(conv2_pool, ksize=self.ksize, outchannel=128,
-                                  radix=self.radix, kpaths=self.kpaths, name="conv2_2", verbose=verbose)
+                                  radix=self.radix, kpaths=self.kpaths, name="conv2_2")
         conv3_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2, name='pool_3')(conv2_2)
         conv3_1 = self.residual_S(conv3_pool, ksize=self.ksize, outchannel=256,
-                                  radix=self.radix, kpaths=self.kpaths, name="conv3_1", verbose=verbose)
+                                  radix=self.radix, kpaths=self.kpaths, name="conv3_1")
         conv4_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2, name='pool_4')(conv3_1)
         conv3_2 = self.residual_S(conv4_pool, ksize=self.ksize, outchannel=512,
-                                  radix=self.radix, kpaths=self.kpaths, name="conv3_2", verbose=verbose)
+                                  radix=self.radix, kpaths=self.kpaths, name="conv3_2")
         conv5_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2, name='pool_5')(conv3_2)
         conv4_1 = self.residual_S(conv5_pool, ksize=self.ksize, outchannel=512,
-                                  radix=self.radix, kpaths=self.kpaths, name="conv4_1", verbose=verbose)
+                                  radix=self.radix, kpaths=self.kpaths, name="conv4_1")
         conv6_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2, name='pool_6')(conv4_1)
 
         upsample0 = self.upsample(conv6_pool, out_channel=512, apply_dropout=True, name="upsample_0")
@@ -114,14 +132,14 @@ class ResNest:
         upsample4 = self.upsample(concat3, out_channel=128, name="upsample_4")
         concat4 = tf.concat([upsample4, conv1_pool], axis=3)
 
-        result = tf.keras.layers.Conv2DTranspose(3, 4, strides=2, name="f_tran", padding='same')(concat4)
-        result = tf.keras.layers.Softmax()(result)
-
-        resNest = tf.keras.Model(img_input, result)
+        result = tf.keras.layers.Conv2DTranspose(3, 4, strides=2, name="f_tran",
+                                                 padding='same', activation='softmax')(concat4)
+        # result = tf.keras.layers.Softmax()(result)
+        resNest = tf.keras.Model(inputs=imp_layers, outputs=result)
         return resNest
 
     def residual_S(self, input, ksize, outchannel,
-                   radix, kpaths, name="", verbose=False):
+                   radix, kpaths, name=""):
         concats_1 = None
         for idx_k in range(kpaths):
             cardinal = self.cardinal(input, ksize, outchannel // 2, radix, kpaths,
@@ -139,8 +157,6 @@ class ResNest:
             input = convtmp_scact
 
         output = input + concats_2
-
-        # if verbose: print(name, output.shape)
         return output
 
     def cardinal(self, input, ksize, outchannel,
@@ -233,16 +249,18 @@ class Dataset(object):
         train_data = np.load(train_path)
         val_data = np.load(val_path)
 
-        y_tr = train_data[:, :, :, :, 0]
-        y_te = val_data[:, :, :, :, 0]
-        train_data = np.delete(train_data, 0, 4)
-        val_data = np.delete(val_data, 0, 4)
+        y_tr = train_data[:, :, :, 0]
+        y_te = val_data[:, :, :, 0]
+        train_data = np.delete(train_data, 0, 3)
+        val_data = np.delete(val_data, 0, 3)
         x_tr = np.array(train_data)
         x_te = np.array(val_data)
-        x_tr = x_tr[:, :, :, :, :-1]
-        x_te = x_te[:, :, :, :, :-1]
-        x_tr = x_tr.reshape([-1, 256, 64, 14])
-        x_te = x_te.reshape([-1, 256, 64, 14])
+        x_tr = x_tr.reshape([-1, 10, 256, 64, 3])
+        x_te = x_te.reshape([-1, 10, 256, 64, 3])
+        y_tr = y_tr.reshape([-1, 10, 256, 64])
+        y_te = y_te.reshape([-1, 10, 256, 64])
+        y_tr = y_tr[:, 0, :, :]
+        y_te = y_te[:, 0, :, :]
         y_tr = y_tr.reshape([-1, 256, 64])
         y_te = y_te.reshape([-1, 256, 64])
         x_tr = x_tr.astype(dtype=np.float64)
@@ -262,8 +280,6 @@ class Dataset(object):
         self.idx_tr, self.idx_te = 0, 0
 
         print("Number of data\nTraining: %d, Test: %d\n" % (self.num_tr, self.num_te))
-        print("x_tr shape = {}".format(x_tr.shape))
-        print("y_tr shape = {}".format(y_tr.shape))
 
         x_sample, y_sample = self.x_te[0], self.y_te[0]
         self.height = x_sample.shape[0]
@@ -289,7 +305,23 @@ class Dataset(object):
 
     def next_train(self, batch_size=1, fix=False):
 
-        start, end = self.idx_tr, self.idx_tr+batch_size
+        # start = self.idx_tr
+        start = self.idx_tr
+        self.idx_tr += batch_size
+        end = self.idx_tr
+        # tmpidx = 0
+        # while tmpidx != batch_size:
+        #     t_inx = 0
+        #     self.idx_tr += 1
+        #     while t_inx < 10:
+        #         self.idx_tr += 1
+        #         if self.idx_tr >= self.num_tr:
+        #             break
+        #         t_inx += 1
+        #     tmpidx += 1
+        #     if self.idx_tr >= self.num_tr:
+        #         break
+        # end = self.idx_tr
         x_tr, y_tr = self.x_tr[start:end], self.y_tr[start:end]
 
         terminator = False
@@ -297,7 +329,6 @@ class Dataset(object):
             terminator = True
             self.idx_tr = 0
             # self.x_tr, self.y_tr = shuffle(self.x_tr, self.y_tr)
-        else: self.idx_tr = end
 
         if fix: self.idx_tr = start
 
@@ -308,7 +339,22 @@ class Dataset(object):
 
     def next_test(self, batch_size=1):
 
-        start, end = self.idx_te, self.idx_te + batch_size
+        start = self.idx_te
+        self.idx_te += batch_size
+        end = self.idx_te
+        # tmpidx = 0
+        # while tmpidx != batch_size:
+        #     t_inx = 0
+        #     self.idx_te += 1
+        #     while t_inx < 10:
+        #         self.idx_te += 1
+        #         if self.idx_te >= self.num_te:
+        #             break
+        #         t_inx += 1
+        #     tmpidx += 1
+        #     if self.idx_te >= self.num_te:
+        #         break
+
         x_te, y_te = self.x_te[start:end], self.y_te[start:end]
 
         terminator = False
@@ -322,7 +368,7 @@ class Dataset(object):
         return x_te, self.label2vector(labels=y_te), terminator
 
 
-def training(neuralnet, dataset, epochs, batch_size):
+def training(neuralnet, dataset, epochs, batch_size, mode=0, path=None):
     print("\nTraining to %d epochs (%d of minibatch size)" % (epochs, batch_size))
 
     iteration = 0
@@ -331,7 +377,7 @@ def training(neuralnet, dataset, epochs, batch_size):
     for epoch in range(epochs):
 
         while True:
-            x_tr, y_tr, terminator = dataset.next_train(batch_size)  # y_tr does not used in this prj.
+            x_tr, y_tr, terminator = dataset.next_train(batch_size)
             loss, accuracy, class_score = neuralnet.step(x=x_tr, y=y_tr, train=True)
 
             iteration += 1
@@ -389,15 +435,15 @@ def test(neuralnet, dataset, epoch):
 
 def main():
     # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-    train_data = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TrainingData.npy'
-    val_data = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/ValidationData.npy'
+    train_data = '/data/TBI/Datasets/NPFiles/Cardiac/TrainingData2.npy'
+    val_data = '/data/TBI/Datasets/NPFiles/Cardiac/ValidationData2.npy'
     dataset = Dataset(train_data, val_data)
     neuralnet = ResNest(height=dataset.height, width=dataset.width, channel=dataset.channel,
-                        num_class=dataset.num_class, radix=3, ksize=3, learning_rate=1e-3)
+                        num_class=dataset.num_class, radix=2, ksize=2, learning_rate=1e-3)
 
-    training(neuralnet=neuralnet, dataset=dataset, epochs=26, batch_size=64)
+    training(neuralnet=neuralnet, dataset=dataset, epochs=20, batch_size=16)
     # test(neuralnet=neuralnet, dataset=dataset)
-    neuralnet.resModel.save('/DATA/TBI/Datasets/Models/ResNeSt_C1')
+    neuralnet.resModel.save('/data/TBI/Datasets/Models/ResNeSt_C2')
 
 
 if __name__ == '__main__':

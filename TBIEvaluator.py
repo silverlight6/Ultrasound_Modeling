@@ -9,12 +9,12 @@ import multiprocessing
 patientNum = "024"
 scanNum = "006"
 scanType = "Z"
-savePath = "/data/TBI/Datasets/Pictures/Evaluator/"
+savePath = "/DATA/TBI/Datasets/Pictures/Evaluator/"
 image_num = 0
 countx = 0
 county = 0
-xAxisPath = '/data/TBI/Datasets/NPFiles/xAxis.npy'
-yAxisPath = '/data/TBI/Datasets/NPFiles/yAxis.npy'
+xAxisPath = '/DATA/TBI/Datasets/NPFiles/xAxis.npy'
+yAxisPath = '/DATA/TBI/Datasets/NPFiles/yAxis.npy'
 xAxis = np.load(xAxisPath)
 yAxis = np.load(yAxisPath)
 xAxis = xAxis.astype(int)
@@ -71,14 +71,47 @@ def preProcess(input_data, xdim=160, ydim=192):
 def preProcess1(input_data, xdim=160, ydim=192):
     tt_y = input_data[image_num, :, :, :, 0]
     # print(tt_y.shape)
-    input_data = np.delete(input_data, 0, 4)
-    tt_x = input_data[:, :, :, :, :]
-    tt_x = tt_x[image_num, :, :, :, :]
+    tt_x = input_data[image_num, :, :, :, 1:15]
     tt_x = np.array(tt_x)
     tt_y = np.array(tt_y)
     tt_y = tt_y.reshape([xdim, ydim])
     tt_x = tt_x.reshape([1, xdim, ydim, -1])
     return tt_x, tt_y
+
+
+def preProcess2(input_data, xdim=256, ydim=64):
+    y_tr = input_data[:, :, :, :, 0]
+    train_data = np.delete(input_data, 0, 4)
+    x_tr = np.array(train_data)
+    y_tr = y_tr.astype(dtype=np.int32)
+    y_tr = y_tr[:, 0, :, :]
+    x_tr = x_tr[image_num, :, :, :, :]
+    y_tr = y_tr[image_num, :, :]
+    y_tr = y_tr.reshape([256, 64])
+    x_tr = x_tr.astype(dtype=np.float64)
+    return x_tr, y_tr
+
+
+def CardiacPreProcess(input_data, xdim=256, ydim=64, paths=None):
+    global image_num
+    t_x = []
+    t_p = []
+    t_y = input_data[image_num, :, :, 0]
+    t_x.append(input_data[image_num, :, :, 1:16])
+    t_p.append(paths[image_num])
+    path = paths[image_num]
+    image_num += 1
+    while path == paths[image_num]:
+        t_x.append(input_data[image_num, :, :, 1:16])
+        t_p.append(paths[image_num])
+        image_num += 1
+    t_x = np.array(t_x)
+    t_y = np.array(t_y)
+    t_p = np.array(t_p)
+    t_y = t_y.reshape([xdim, ydim])
+    t_x = t_x.reshape([-1, xdim, ydim, 3])
+    t_p = t_p.reshape([-1])
+    return t_x, t_y, t_p
 
 
 def my_loss_cat(y_true, y_pred):
@@ -92,10 +125,42 @@ def my_loss_cat(y_true, y_pred):
     return CE * -1 * 3
 
 
+def Cardiac_Model():
+    global image_num
+    global lock
+    dataPath_m = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TestingData2.npy'
+    pathNames_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TestingPaths2.npy'
+    data_m = np.load(dataPath_m)
+    pathNames = np.load(pathNames_path)
+    processes = []
+    # pathLen = len(pathNames) / 10
+    pathLen = len(pathNames)
+    tmpcnt = 0
+    lock = multiprocessing.Lock()
+    while image_num < pathLen:
+        while image_num < tmpcnt + 20 and image_num < pathLen:
+            if image_num >= pathLen:
+                break
+            lock.acquire()
+            [testX, testY] = preProcess2(data_m, xdim=256, ydim=64)
+            lock.release()
+            p = multiprocessing.Process(target=PolarProcess, args=(testX, testY, pathNames[image_num]))
+            p.start()
+            processes.append(p)
+            print("Process Create")
+            image_num += 1
+        for process in processes:
+            # print("Process Finished")
+            process.join()
+        tmpcnt = tmpcnt + 20
+        print(tmpcnt)
+    print(tmpcnt)
+
+
 def Polar_Model(sAll=False):
     global image_num
-    dataPath_m = '/data/TBI/Datasets/NPFiles/IPH/TestingData.npy'
-    pathNames_path = '/data/TBI/Datasets/NPFiles/IPH/TestingPaths.npy'
+    dataPath_m = '/DATA/TBI/Datasets/NPFiles/IPH/TestingData.npy'
+    pathNames_path = '/DATA/TBI/Datasets/NPFiles/IPH/TestingPaths.npy'
     data_m = np.load(dataPath_m)
     pathNames = np.load(pathNames_path)
     if not sAll:
@@ -130,20 +195,28 @@ def Polar_Model(sAll=False):
         #     PolarProcess(testX, testY, name=pathNames[i])
 
 
-def PolarProcess(testX, testY, name):
-    # SegNet = tf.keras.models.load_model("tbi_ResNeSt_0")
+def PolarProcess(testX, testY, name, paths=None):
+
     # DispInput(testX)
-    SegNet = tf.keras.models.load_model("/data/TBI/Datasets/Models/IPH_Mobile_0", custom_objects={'my_loss_cat': my_loss_cat})
-    prob = SegNet.predict(testX)
+    SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/tbi_segnet_2_0",
+                                        custom_objects={'my_loss_cat_1': my_loss_cat})
+    # SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/tbi_segnet_C1",
+    #                                     custom_objects={'my_loss_cat_1': my_loss_cat})
+    prob = SegNet({"imp0": tf.expand_dims(testX[0, :, :, :], 0), "imp1": tf.expand_dims(testX[1, :, :, :], 0),
+                   "imp2": tf.expand_dims(testX[2, :, :, :], 0), "imp3": tf.expand_dims(testX[3, :, :, :], 0),
+                   "imp4": tf.expand_dims(testX[4, :, :, :], 0), "imp5": tf.expand_dims(testX[5, :, :, :], 0),
+                   "imp6": tf.expand_dims(testX[6, :, :, :], 0), "imp7": tf.expand_dims(testX[7, :, :, :], 0),
+                   "imp8": tf.expand_dims(testX[8, :, :, :], 0), "imp9": tf.expand_dims(testX[9, :, :, :], 0)})
+    # prob = SegNet(testX)
     probOut = prob[:, :, :, -1]
     prob = np.array(prob)
     prob = prob.reshape([256, 64, -1])
-    bMode = testX[:, :, :, -1]
+    # bMode = testX[:, :, :, -1]
 
     probOut = np.array(probOut)
     probOut = probOut.reshape(256, 64)
-    bMode = np.array(bMode)
-    bMode = bMode.reshape(256, 64)
+    # bMode = np.array(bMode)
+    # bMode = bMode.reshape(256, 64)
 
     probO = np.ones([256, 64])
     probO -= prob[:, :, 0]
@@ -151,8 +224,9 @@ def PolarProcess(testX, testY, name):
     probO += prob[:, :, 2]
 
     dispDict["probMap"] = True
-    dispDict["bMode"] = True
-    Display(probO, testY, name=name, numDim=3, bMode=bMode, probmap=probOut)
+    # dispDict["bMode"] = True
+    # print(testY.shape)
+    Display(probO, testY, name=name, numDim=3, probmap=probOut)
     return
 
 
@@ -176,7 +250,7 @@ def Display(prob=None, true=None, mask=None, confusion=None, name="True", numDim
     fig.tight_layout(rect=[0, 0, 1, 0.97])
     fig.subplots_adjust(hspace=.25, wspace=.3, bottom=.1)
     fig.set_size_inches(10, 6)
-    name = str(name) + datetime.datetime.now().strftime("%f")
+    # name = str(name) + datetime.datetime.now().strftime("%f")
     global countx
     global county
     colormap = 'magma'
@@ -268,7 +342,8 @@ def checkCount(name="name"):
         countx = 0
 
 
-Polar_Model(sAll=True)
+Cardiac_Model()
+# Polar_Model(sAll=True)
 # CT_Derived_Model()
 # segNet_Transfer_Model()
 # Split_Model()

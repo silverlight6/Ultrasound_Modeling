@@ -3,25 +3,26 @@ from tensorflow import keras
 import numpy as np
 from datetime import datetime
 
-training_data_path = '/data/TBI/Datasets/NPFiles/Cardiac/TrainingData.npy'
-testing_data_path = '/data/TBI/Datasets/NPFiles/Cardiac/ValidationData.npy'
+training_data_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TrainingData.npy'
+testing_data_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/ValidationData.npy'
 
 # channel 0: outside the brain
 # channel 1: no-bleed
 # channel 2: bleed
 OUTPUT_CHANNELS = 3
-BATCH_SIZE = 50
+BATCH_SIZE = 128
 BUFFER_SIZE = 100
 xdim = 256
 ydim = 64
 pct = [0, 0, 0]  # Positive Count Total Class 0 or Percentage per Class Total
 class_factor = [0.06725, 0.03851, 0.89423]
+# class_factor = [0.3, 0.1, 0.6]
 
 
 def preProcess(input_data):
     print(input_data)
     t_y = tf.gather(input_data, 0, axis=3)  # weeding out the labels
-    t_x = tf.gather(input_data, list(range(1, 16)), axis=3)  # weeding out the x data
+    t_x = tf.gather(input_data, list(range(1, 15)), axis=3)  # weeding out the x data
     t_y = tf.cast(t_y, dtype=tf.int32)  # choose int32 types for the data
     t_y = tf.one_hot(t_y, depth=OUTPUT_CHANNELS)  # convert to 3 bits to represent classes
     tf.debugging.check_numerics(t_x, "x contains Nan")
@@ -42,7 +43,7 @@ train_data.batch(BATCH_SIZE)  # make data into batches, based on batch size
 print(train_data)
 test_data.batch(BATCH_SIZE)  # make data into batches, based on batch size
 
-image_shape = [xdim, ydim, 15]
+image_shape = [xdim, ydim, 14]
 
 # Code for finding class distributions
 for _, label in train_data:
@@ -105,13 +106,13 @@ def upsample(filters, size, apply_dropout=False):
 
 
 def Mask_Gen():
-    inputs = keras.layers.Input(shape=[xdim, ydim, 15])
+    inputs = keras.layers.Input(shape=[xdim, ydim, 14])
 
     fScaleFactor = 8
     # encoder layers
     down_stack = [
         downsample(4 * fScaleFactor, 4, conv_id=0, batch_norm=False),  # (bs, 128, 32, 64)
-        downsample(16 * fScaleFactor, 4, conv_id=1, batch_norm=False),  # (bs, 64, 16, 256)
+        downsample(16 * fScaleFactor, 4, conv_id=1),  # (bs, 64, 16, 256)
         downsample(32 * fScaleFactor, 4, conv_id=2),  # (bs, 32, 8, 512)
         downsample(32 * fScaleFactor, 4, conv_id=3),  # (bs, 16, 4, 512)
         downsample(32 * fScaleFactor, 4, conv_id=4),  # (bs, 8, 2, 512)
@@ -123,7 +124,7 @@ def Mask_Gen():
         upsample(32 * fScaleFactor, 4, apply_dropout=True),  # (bs, 4, 1, 1024)
         upsample(32 * fScaleFactor, 4, apply_dropout=True),  # (bs, 8, 2, 1024)
         upsample(32 * fScaleFactor, 4, apply_dropout=True),  # (bs, 16, 4, 1024)
-        upsample(16 * fScaleFactor, 4, apply_dropout=True),  # (bs, 32, 8, 768)
+        upsample(16 * fScaleFactor, 4),  # (bs, 32, 8, 768)
         upsample(8 * fScaleFactor, 4),  # (bs, 64, 16, 640)
     ]
 
@@ -162,7 +163,7 @@ mask_gen = Mask_Gen()
 print(mask_gen.summary())
 # tf.keras.utils.plot_model(mask_gen, to_file='SegNet.png', show_shapes=True)
 
-mask_gen_optimizer = keras.optimizers.Adam(2e-2, beta_1=0.5)
+mask_gen_optimizer = keras.optimizers.Adam(2e-3)
 
 log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 tensorboard_callback = keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
@@ -186,7 +187,7 @@ stop_callbacks = [
     )
 ]
 
-epochs = 50
+epochs = 10
 
 
 # EXPERIMENTAL CODE HERE
@@ -194,12 +195,19 @@ epochs = 50
 # ATTENTION it pays towards that bleed.
 def my_loss_cat(y_true, y_pred):
     CE = 0
-    for c in range(0, 3):
+    for c in range(0, OUTPUT_CHANNELS):
         scale_factor = 1 / (tf.reduce_sum(y_true[:, :, :, c]) + 1)
-        # tf.print(y_pred[:, :, :, c])
         CE += tf.reduce_sum(tf.multiply(y_true[:, :, :, c], tf.cast(
-            tf.math.log(y_pred[:, :, :, c]), tf.float32))) * scale_factor * class_factor[c]
+            tf.math.log(y_pred[:, :, :, c] + 1e-7), tf.float32))) * scale_factor * class_factor[c]
     return CE * -1
+
+
+def my_loss_cat_1(y_true, y_pred):
+    CE = 0
+    cce = tf.keras.losses.CategoricalCrossentropy()
+    for c in range(0, OUTPUT_CHANNELS):
+        CE += cce(y_pred=y_pred, y_true=y_true) * class_factor[c]
+    return CE * OUTPUT_CHANNELS
 
 
 @tf.function
@@ -229,14 +237,14 @@ class CatRecall(keras.metrics.Metric):
 
 mask_gen.compile(optimizer=mask_gen_optimizer,
                  # loss=keras.losses.CategoricalCrossentropy(from_logits=False),
-                 loss=my_loss_cat,
+                 loss=my_loss_cat_1,
                  metrics=['Recall', 'Precision'])
 
 mask_gen.fit(train_data,
              shuffle=True,
              validation_data=test_data,
              epochs=epochs,
-             callbacks=[tensorboard_callback, stop_callbacks]
+             callbacks=[tensorboard_callback]
              )
 
-mask_gen.save('/data/TBI/Datasets/Models/tbi_segnet_0')
+mask_gen.save('/DATA/TBI/Datasets/Models/tbi_segnet_C1')
