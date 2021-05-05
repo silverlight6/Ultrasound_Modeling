@@ -71,19 +71,19 @@ def preProcess(input_data, xdim=160, ydim=192):
 def preProcess1(input_data, xdim=160, ydim=192):
     tt_y = input_data[image_num, :, :, :, 0]
     # print(tt_y.shape)
-    tt_x = input_data[image_num, :, :, :, 1:15]
+    bMode = input_data[image_num, :, :, :, 7]
+    tt_x = input_data[image_num, :, :, :, 1:7]
     tt_x = np.array(tt_x)
     tt_y = np.array(tt_y)
     tt_y = tt_y.reshape([xdim, ydim])
     tt_x = tt_x.reshape([1, xdim, ydim, -1])
-    return tt_x, tt_y
+    return tt_x, tt_y, bMode
 
 
 def preProcess2(input_data, xdim=256, ydim=64):
     y_tr = input_data[:, :, :, :, 0]
     train_data = np.delete(input_data, 0, 4)
     x_tr = np.array(train_data)
-    y_tr = y_tr.astype(dtype=np.int32)
     y_tr = y_tr[:, 0, :, :]
     x_tr = x_tr[image_num, :, :, :, :]
     y_tr = y_tr[image_num, :, :]
@@ -128,8 +128,8 @@ def my_loss_cat(y_true, y_pred):
 def Cardiac_Model():
     global image_num
     global lock
-    dataPath_m = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TestingData2.npy'
-    pathNames_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TestingPaths2.npy'
+    dataPath_m = '/DATA/TBI/Datasets/NPFiles/DispBal/TestingData2.npy'
+    pathNames_path = '/DATA/TBI/Datasets/NPFiles/DispBal/TestingPaths2.npy'
     data_m = np.load(dataPath_m)
     pathNames = np.load(pathNames_path)
     processes = []
@@ -159,16 +159,16 @@ def Cardiac_Model():
 
 def Polar_Model(sAll=False):
     global image_num
-    dataPath_m = '/DATA/TBI/Datasets/NPFiles/IPH/TestingData.npy'
-    pathNames_path = '/DATA/TBI/Datasets/NPFiles/IPH/TestingPaths.npy'
+    dataPath_m = '/DATA/TBI/Datasets/NPFiles/DispBal/TestingData.npy'
+    pathNames_path = '/DATA/TBI/Datasets/NPFiles/DispBal/TestingPaths.npy'
     data_m = np.load(dataPath_m)
     pathNames = np.load(pathNames_path)
     if not sAll:
         print(pathNames)
         index = findImage(pathNames)
         # print(pathNames)
-        [testX, testY] = preProcess1(data_m, xdim=256, ydim=64)
-        PolarProcess(testX, testY, name=pathNames[index])
+        [testX, testY, bMode] = preProcess1(data_m, xdim=256, ydim=64)
+        PolarProcess(testX, testY, name=pathNames[index], bMode=bMode)
     else:
         processes = []
         pathLen = len(pathNames)
@@ -178,8 +178,8 @@ def Polar_Model(sAll=False):
                 if i >= pathLen:
                     break
                 image_num = i
-                [testX, testY] = preProcess1(data_m, xdim=256, ydim=64)
-                p = multiprocessing.Process(target=PolarProcess, args=(testX, testY, pathNames[i]))
+                [testX, testY, bMode] = preProcess1(data_m, xdim=256, ydim=64)
+                p = multiprocessing.Process(target=PolarProcess, args=(testX, testY, pathNames[i], bMode))
                 p.start()
                 processes.append(p)
                 print("Process Create")
@@ -195,28 +195,28 @@ def Polar_Model(sAll=False):
         #     PolarProcess(testX, testY, name=pathNames[i])
 
 
-def PolarProcess(testX, testY, name, paths=None):
+def PolarProcess(testX, testY, name, bMode=None, paths=None):
 
     # DispInput(testX)
-    SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/tbi_segnet_2_0",
-                                        custom_objects={'my_loss_cat_1': my_loss_cat})
-    # SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/tbi_segnet_C1",
-    #                                     custom_objects={'my_loss_cat_1': my_loss_cat})
-    prob = SegNet({"imp0": tf.expand_dims(testX[0, :, :, :], 0), "imp1": tf.expand_dims(testX[1, :, :, :], 0),
-                   "imp2": tf.expand_dims(testX[2, :, :, :], 0), "imp3": tf.expand_dims(testX[3, :, :, :], 0),
-                   "imp4": tf.expand_dims(testX[4, :, :, :], 0), "imp5": tf.expand_dims(testX[5, :, :, :], 0),
-                   "imp6": tf.expand_dims(testX[6, :, :, :], 0), "imp7": tf.expand_dims(testX[7, :, :, :], 0),
-                   "imp8": tf.expand_dims(testX[8, :, :, :], 0), "imp9": tf.expand_dims(testX[9, :, :, :], 0)})
-    # prob = SegNet(testX)
+    # SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/tbi_segnet_2_1",
+    #                                     custom_objects={'my_loss_cat': my_loss_cat})
+    SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/ResNeSt_D1",
+                                        custom_objects={'my_loss_cat': my_loss_cat})
+    # SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/ResNeSt_D1")
+    # prob = SegNet({"imp0": tf.expand_dims(testX[0, :, :, :], 0), "imp1": tf.expand_dims(testX[1, :, :, :], 0),
+    #                "imp2": tf.expand_dims(testX[2, :, :, :], 0), "imp3": tf.expand_dims(testX[3, :, :, :], 0),
+    #                "imp4": tf.expand_dims(testX[4, :, :, :], 0), "imp5": tf.expand_dims(testX[5, :, :, :], 0),
+    #                "imp6": tf.expand_dims(testX[6, :, :, :], 0), "imp7": tf.expand_dims(testX[7, :, :, :], 0),
+    #                "imp8": tf.expand_dims(testX[8, :, :, :], 0), "imp9": tf.expand_dims(testX[9, :, :, :], 0)})
+    prob = SegNet(testX)
     probOut = prob[:, :, :, -1]
     prob = np.array(prob)
     prob = prob.reshape([256, 64, -1])
-    # bMode = testX[:, :, :, -1]
 
     probOut = np.array(probOut)
     probOut = probOut.reshape(256, 64)
-    # bMode = np.array(bMode)
-    # bMode = bMode.reshape(256, 64)
+    bMode = np.array(bMode)
+    bMode = bMode.reshape(256, 64)
 
     probO = np.ones([256, 64])
     probO -= prob[:, :, 0]
@@ -224,9 +224,9 @@ def PolarProcess(testX, testY, name, paths=None):
     probO += prob[:, :, 2]
 
     dispDict["probMap"] = True
-    # dispDict["bMode"] = True
+    dispDict["bMode"] = True
     # print(testY.shape)
-    Display(probO, testY, name=name, numDim=3, probmap=probOut)
+    Display(probO, testY, name=name, bMode=bMode, numDim=3, probmap=probOut)
     return
 
 
@@ -250,13 +250,13 @@ def Display(prob=None, true=None, mask=None, confusion=None, name="True", numDim
     fig.tight_layout(rect=[0, 0, 1, 0.97])
     fig.subplots_adjust(hspace=.25, wspace=.3, bottom=.1)
     fig.set_size_inches(10, 6)
-    # name = str(name) + datetime.datetime.now().strftime("%f")
+    name = str(name) + datetime.datetime.now().strftime("%f")
     global countx
     global county
     colormap = 'magma'
     if dispDict["prob"]:
         ax[county, countx].grid(False)
-        ax[county, countx].pcolormesh(xAxis, yAxis, prob, cmap=colormap)
+        ax[county, countx].pcolormesh(xAxis, yAxis, prob, shading='flat', cmap=colormap)
         ax[county, countx].invert_yaxis()
         ax[county, countx].title.set_text('Prediction')
         checkCount(name)
@@ -264,7 +264,7 @@ def Display(prob=None, true=None, mask=None, confusion=None, name="True", numDim
 
     if dispDict["true"]:
         ax[county, countx].grid(False)
-        ax[county, countx].pcolormesh(xAxis, yAxis, true, cmap=colormap, vmin=0, vmax=2)
+        ax[county, countx].pcolormesh(xAxis, yAxis, true, shading='flat', cmap=colormap, vmin=0, vmax=2)
         ax[county, countx].invert_yaxis()
         ax[county, countx].title.set_text(name)
         checkCount(name)
@@ -272,7 +272,7 @@ def Display(prob=None, true=None, mask=None, confusion=None, name="True", numDim
 
     if dispDict["mask"]:
         ax[county, countx].grid(False)
-        ax[county, countx].pcolormesh(xAxis, yAxis, mask, cmap=colormap, shading='auto', edgecolors='none')
+        ax[county, countx].pcolormesh(xAxis, yAxis, mask, shading='flat', cmap=colormap, edgecolors='none')
         ax[county, countx].invert_yaxis()
         ax[county, countx].title.set_text('Brain_Mask')
         checkCount(name)
@@ -282,7 +282,7 @@ def Display(prob=None, true=None, mask=None, confusion=None, name="True", numDim
         diff = np.where(prob != true, 1, 0)
         diff = np.where(((true == numDim) & (prob != numDim)), numDim-1, diff)
         ax[county, countx].grid(False)
-        ax[county, countx].pcolormesh(xAxis, yAxis, diff, cmap=colormap, shading='auto', edgecolors='none')
+        ax[county, countx].pcolormesh(xAxis, yAxis, diff, shading='flat', cmap=colormap, edgecolors='none')
         ax[county, countx].invert_yaxis()
         ax[county, countx].title.set_text('Difference')
         checkCount(name)
@@ -298,7 +298,7 @@ def Display(prob=None, true=None, mask=None, confusion=None, name="True", numDim
 
     if dispDict["probMap"]:
         ax[county, countx].grid(False)
-        ax[county, countx].pcolormesh(xAxis, yAxis, probmap, cmap=colormap, vmin=0, vmax=1)
+        ax[county, countx].pcolormesh(xAxis, yAxis, probmap, shading='flat', cmap=colormap, vmin=0, vmax=1)
         ax[county, countx].invert_yaxis()
         ax[county, countx].title.set_text('Probability Bleed')
         checkCount(name)
@@ -308,7 +308,7 @@ def Display(prob=None, true=None, mask=None, confusion=None, name="True", numDim
         _, bin_edges = np.histogram(bMode, bins=25)
         # print(bin_edges)
         ax[county, countx].grid(False)
-        ax[county, countx].pcolormesh(xAxis, yAxis, bMode, cmap='binary', vmin=bin_edges[2], vmax=bin_edges[-2])
+        ax[county, countx].pcolormesh(xAxis, yAxis, bMode, shading='flat', cmap='binary', vmin=bin_edges[2], vmax=bin_edges[-2])
         ax[county, countx].invert_yaxis()
         ax[county, countx].title.set_text('bMode')
         checkCount(name)
@@ -342,8 +342,8 @@ def checkCount(name="name"):
         countx = 0
 
 
-Cardiac_Model()
-# Polar_Model(sAll=True)
+# Cardiac_Model()
+Polar_Model(sAll=True)
 # CT_Derived_Model()
 # segNet_Transfer_Model()
 # Split_Model()

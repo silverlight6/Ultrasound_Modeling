@@ -5,15 +5,13 @@ from datetime import datetime
 
 
 def main():
-    training_data_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TrainingData2.npy'
-    testing_data_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/ValidationData2.npy'
+    training_data_path = '/DATA/TBI/Datasets/NPFiles/DispBal/ValidationData2.npy'
+    testing_data_path = '/DATA/TBI/Datasets/NPFiles/DispBal/TestingData2.npy'
 
     # channel 0: outside the brain
     # channel 1: no-bleed
     # channel 2: bleed
     OUTPUT_CHANNELS = 3
-    BATCH_SIZE = 30
-    BUFFER_SIZE = 100
     xdim = 256
     ydim = 64
     pct = [0, 0, 0]  # Positive Count Total Class 0 or Percentage per Class Total
@@ -29,17 +27,27 @@ def main():
     val_data = np.delete(val_data, 0, 4)
     x_tr = np.array(train_data)
     x_te = np.array(val_data)
-    y_tr = y_tr.astype(dtype=np.int32)
-    y_te = y_te.astype(dtype=np.int32)
-    y_tr = np.eye(OUTPUT_CHANNELS)[y_tr]
-    y_te = np.eye(OUTPUT_CHANNELS)[y_te]
-    y_tr = y_tr[:, 0, :, :, :]
-    y_te = y_te[:, 0, :, :, :]
-    y_tr = y_tr.reshape([-1, 256, 64, 3])
-    y_te = y_te.reshape([-1, 256, 64, 3])
+    y_tr = y_tr[:, 0, :, :]
+    y_te = y_te[:, 0, :, :]
+
+    class_2 = np.where(y_te >= 1.05, y_te - 1, 0)
+    class_2 = np.where(class_2 > 1, 1, class_2)
+    class_1 = np.expand_dims(np.where(y_te > 0.95, 1 - class_2, 0), axis=3)
+    class_0 = np.expand_dims(np.where(y_te <= 0.95, 1, 0), axis=3)
+    class_2 = np.expand_dims(class_2, axis=3)
+    y_te = np.concatenate((class_0, class_1, class_2), axis=3)
+    y_te = y_te.astype(dtype=np.float32)
+
+    class_2 = np.where(y_tr >= 1.05, y_tr - 1, 0)
+    class_2 = np.where(class_2 > 1, 1, class_2)
+    class_1 = np.expand_dims(np.where(y_tr > 0.95, 1 - class_2, 0), axis=3)
+    class_0 = np.expand_dims(np.where(y_tr <= 0.95, 1, 0), axis=3)
+    class_2 = np.expand_dims(class_2, axis=3)
+    y_tr = np.concatenate((class_0, class_1, class_2), axis=3)
+    y_tr = y_tr.astype(dtype=np.float32)
+
     x_tr = x_tr.astype(dtype=np.float64)
     x_te = x_te.astype(dtype=np.float64)
-    print(x_tr.shape)
     x_tr0, x_tr1, x_tr2, x_tr3, x_tr4, x_tr5, x_tr6, x_tr7, x_tr8, x_tr9 = [], [], [], [], [], [], [], [], [], [],
     for i in range(0, x_tr.shape[0]):
         x_tr0 = x_tr[:, 0, :, :, :]
@@ -229,7 +237,7 @@ def main():
     print(mask_gen.summary())
     # tf.keras.utils.plot_model(mask_gen, to_file='SegNet.png', show_shapes=True)
 
-    mask_gen_optimizer = keras.optimizers.Adam(2e-3)
+    mask_gen_optimizer = keras.optimizers.Nadam(2e-4)
 
     log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
     tensorboard_callback = keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
@@ -237,7 +245,7 @@ def main():
     stop_callbacks = [
         keras.callbacks.EarlyStopping(
             # Stop training when `val_loss` is no longer improving
-            monitor="val_loss",
+            monitor="val_recall",
             # "no longer improving" being defined as "no better than 1e-3 less"
             min_delta=1e-4,
             # "no longer improving" being further defined as "for at least 7 epochs"
@@ -245,7 +253,7 @@ def main():
             verbose=1,
         ),
         keras.callbacks.ReduceLROnPlateau(
-            monitor='val_loss',
+            monitor="val_recall",
             factor=0.3,
             patience=3,
             min_lr=0.00001,
@@ -261,11 +269,16 @@ def main():
     # ATTENTION it pays towards that bleed.
     def my_loss_cat(y_true, y_pred):
         CE = 0
-        for c in range(0, OUTPUT_CHANNELS):
-            scale_factor = 1 / (tf.reduce_sum(y_true[:, :, :, c]) + 1)
-            CE += tf.reduce_sum(tf.multiply(y_true[:, :, :, c], tf.cast(
-                tf.math.log(y_pred[:, :, :, c] + 1e-7), tf.float32))) * scale_factor * class_factor[c]
-        return CE * -1
+        for c in range(0, 3):
+            scale_factor = tf.cast(tf.divide(x=1, y=tf.add(x=tf.reduce_sum(y_true[:, :, :, c], axis=0), y=1)),
+                                   tf.float32)
+            # CE += tf.multiply(tf.reduce_sum(tf.multiply(y_true[:, :, :, c], tf.cast(
+            #       tf.math.log(x=tf.add(y_pred[:, :, :, c], y=1e-7)), tf.float32))), scale_factor)
+            CE += tf.multiply(tf.multiply(tf.reduce_sum(tf.multiply(y_true[:, :, :, c], tf.cast(
+                tf.math.log(x=tf.add(y_pred[:, :, :, c], y=1e-7)), tf.float32)), axis=0), class_factor[c]), scale_factor)
+        output = tf.multiply(x=CE, y=-1)
+        # print(output)
+        return output
 
 
     def my_loss_cat_1(y_true, y_pred):
@@ -302,20 +315,21 @@ def main():
 
     mask_gen.compile(optimizer=mask_gen_optimizer,
                      # loss=keras.losses.CategoricalCrossentropy(from_logits=False),
-                     loss=my_loss_cat_1,
+                     loss=my_loss_cat,
                      metrics=['Recall', 'Precision'])
 
     mask_gen.fit({"imp0": x_tr0, "imp1": x_tr1, "imp2": x_tr2, "imp3": x_tr3, "imp4": x_tr4,
                   "imp5": x_tr5, "imp6": x_tr6, "imp7": x_tr7, "imp8": x_tr8, "imp9": x_tr9},
                  y_tr,
                  shuffle=True,
+                 batch_size=128,
                  validation_data=({"imp0": x_te0, "imp1": x_te1, "imp2": x_te2, "imp3": x_te3, "imp4": x_te4,
                                    "imp5": x_te5, "imp6": x_te6, "imp7": x_te7, "imp8": x_te8, "imp9": x_te9}, y_te),
                  epochs=epochs,
                  callbacks=[tensorboard_callback]
                  )
 
-    mask_gen.save('/DATA/TBI/Datasets/Models/tbi_segnet_2_0')
+    mask_gen.save('/DATA/TBI/Datasets/Models/tbi_segnet_2_1')
 
 
 if __name__ == '__main__':

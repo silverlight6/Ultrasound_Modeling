@@ -20,17 +20,17 @@ def sort_data(data, paths):
     startIndex = 0
     t_index = 0
     batch = 512
-    temp_data = np.zeros([1, 256, 64, 16])
+    temp_data = np.zeros([1, 256, 64, 17])
     while t_index < pathLen:
         if t_index + batch > pathLen:
             batch = pathLen - t_index
         batch_data = data[t_index:t_index + batch]
-        batch_data = batch_data.reshape([batch, 256, 64, 16])
+        batch_data = batch_data.reshape([batch, 256, 64, 18])
         batch_data_y = batch_data[:, :, :, 0]
-        batch_data = np.delete(batch_data, [0, 15], 3)
+        batch_data = np.delete(batch_data, [0, 17], 3)
         batch_data_y = batch_data_y.reshape([batch, 256, 64, 1])
         print("t_index num {}".format(t_index))
-        SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/ResNeSt_C1",
+        SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/ResNeSt_D1",
                                             custom_objects={'my_loss_cat': my_loss_cat})
         batch_data = SegNet.predict(batch_data)
         batch_data = np.concatenate((batch_data_y, batch_data), axis=3)
@@ -82,19 +82,19 @@ def sort_data(data, paths):
 
 def main():
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    #
+    # train_data = '/DATA/TBI/Datasets/NPFiles/DispBal/TrainingData.npy'
+    # train_path = '/DATA/TBI/Datasets/NPFiles/DispBal/TrainingPaths.npy'
+    # pathNames = np.load(train_path)
+    # data = np.load(train_data)
 
-    train_data = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TrainingData.npy'
-    train_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TrainingPaths.npy'
-    pathNames = np.load(train_path)
-    data = np.load(train_data)
+    # finalData, pathFinal = sort_data(data, pathNames)
+    savePath = "/DATA/TBI/Datasets/NPFiles/DispBal/"
+    # np.save(savePath + "TrainingData2.npy", finalData)
+    # np.save(savePath + "TrainingPaths2.npy", pathFinal)
 
-    finalData, pathFinal = sort_data(data, pathNames)
-    savePath = "/DATA/TBI/Datasets/NPFiles/CardiacBalanced/"
-    np.save(savePath + "TrainingData2.npy", finalData)
-    np.save(savePath + "TrainingPaths2.npy", pathFinal)
-
-    test_data = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TestingData.npy'
-    test_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TestingPaths.npy'
+    test_data = '/DATA/TBI/Datasets/NPFiles/DispBal/TestingData.npy'
+    test_path = '/DATA/TBI/Datasets/NPFiles/DispBal/TestingPaths.npy'
     pathNames = np.load(test_path)
     data = np.load(test_data)
 
@@ -102,8 +102,8 @@ def main():
     np.save(savePath + "TestingData2.npy", finalData)
     np.save(savePath + "TestingPaths2.npy", pathFinal)
 
-    validation_data = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/ValidationData.npy'
-    validation_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/ValidationPaths.npy'
+    validation_data = '/DATA/TBI/Datasets/NPFiles/DispBal/ValidationData.npy'
+    validation_path = '/DATA/TBI/Datasets/NPFiles/DispBal/ValidationPaths.npy'
     pathNames = np.load(validation_path)
     data = np.load(validation_data)
 

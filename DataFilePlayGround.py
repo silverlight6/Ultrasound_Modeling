@@ -222,14 +222,14 @@ def dataAug(image):
     if r % 3:
         image = np.fliplr(image)
         change = True
-    if r % 5:
-        image = ndimage.zoom(image, .9 + ((r % 6) / 25))
-        change = True
+    # if r % 5:
+    #     image = ndimage.zoom(image, .9 + ((r % 6) / 25))
+    #     change = True
     if r % 7:
         image = ndimage.rotate(image, ((r % 6) / 50 - .05), reshape=False)
         change = True
     if not change:
-        image = noisy(image, r)
+        image[:, :, 1:] = noisy(image[:, :, 1:], r)
     return image
 
 
@@ -279,7 +279,7 @@ def output2DImages():
     # counting files
     count = 0
 
-    def fileLoop(path, patient_num):
+    def fileLoop(path, patient_num, iterator):
         for harmonic in os.listdir(path):
             if ".mat" in harmonic:
                 # print("Checkpoint 1")
@@ -293,28 +293,28 @@ def output2DImages():
                 iLabel = iLabel_num > .01
                 lock = multiprocessing.Lock()
                 lock.acquire()
-                if count < 46:                                        # 44 patients in training
-                    trainingData.append([image])
-                    trainingPaths.append([pathName])
-                    trainingLabels.append([iLabel])
-                    for _ in range(0, math.floor(iLabel_num / .15)):
-                        trainingData.append([image])
-                        trainingPaths.append([pathName])
-                        trainingLabels.append([iLabel])
-                    if patient_num in IPH_patients:
-                        for i in range(0, 4):
-                            image = imageReduc(image)
-                            trainingData.append([image])
-                            trainingPaths.append([pathName])
-                            trainingLabels.append([iLabel])
-                elif count < 50:                                      # 4 patients in testing
+                if count % 10 == iterator:                                        # 44 patients in training
+                    validationData.append([image])
+                    validationPaths.append([pathName])
+                    validationLabels.append([iLabel])
+                elif count % 10 + 1 == iterator or count % 10 - 9 == iterator:                                      # 4 patients in testing
                     testingData.append([image])
                     testingPaths.append([pathName])
                     testingLabels.append([iLabel])
                 else:                                                 # everything else in validation
-                    validationData.append([image])
-                    validationPaths.append([pathName])
-                    validationLabels.append([iLabel])
+                    trainingData.append([image])
+                    trainingPaths.append([pathName])
+                    trainingLabels.append([iLabel])
+                    # for _ in range(0, math.floor(iLabel_num / .15)):
+                    #     trainingData.append([image])
+                    #     trainingPaths.append([pathName])
+                    #     trainingLabels.append([iLabel])
+                    # if patient_num in IPH_patients:
+                    #     for i in range(0, 4):
+                    #         image = imageReduc(image)
+                    #         trainingData.append([image])
+                    #         trainingPaths.append([pathName])
+                    #         trainingLabels.append([iLabel])
                 lock.release()
                 # for testing purposes only
         print(count)

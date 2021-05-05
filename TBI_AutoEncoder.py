@@ -1,11 +1,12 @@
 import tensorflow as tf
 import numpy as np
 import time
+import cv2
 from matplotlib import pyplot as plt
 from datetime import datetime
 
-training_data_path = '/home/silver/Documents/TBI_NNs/Datasets/NPFiles/TrainingPolarData.npy'
-testing_data_path = '/home/silver/Documents/TBI_NNs/Datasets/NPFiles/ValidationPolarData.npy'
+training_data_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TrainingData.npy'
+testing_data_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/ValidationData.npy'
 train_data = np.load(training_data_path)
 test_data = np.load(testing_data_path)
 
@@ -13,16 +14,17 @@ test_data = np.load(testing_data_path)
 # channel 1: no-bleed
 # channel 2: bleed
 OUTPUT_CHANNELS = 14
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 BUFFER_SIZE = 100
 xdim = 256
 ydim = 64
 
 
 def preProcess(input_data):
+    t_y = tf.gather(input_data, 0, axis=4)
     t_x = tf.gather(input_data, list(range(1, 15)), axis=4)  # weeding out the x data
-    t_x = tf.cast(t_x, tf.float32)
-    return t_x  # return input and output
+    t_x = tf.cast(t_x, tf.float64)
+    return t_x, t_y  # return input and output
 
 
 train_data = preProcess(train_data)
@@ -142,7 +144,7 @@ class VAE(tf.keras.Model):
 
 
 beta = 4
-optimizer = tf.keras.optimizers.Adam(1e-4)
+optimizer = tf.keras.optimizers.Adam(2e-3)
 total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
 reconstruction_loss_tracker = tf.keras.metrics.Mean(name="reconstruction_loss")
 kl_loss_tracker = tf.keras.metrics.Mean(name="kl_loss")
@@ -194,7 +196,7 @@ def train_step(model, x, optimizer):
 
 epochs = 250
 # set the dimensionality of the latent space to a plane for visualization later
-latent_dim = 500
+latent_dim = 512
 
 # keeping the random vector constant for generation (prediction) so
 # it will be easier to see the improvement.
@@ -202,41 +204,60 @@ model = VAE(latent_dim)
 # model.build()
 
 
-def generate_images(model, epoch, test_sample):
-    fig, ax = plt.subplots(1, 2, figsize=(4, 6))
+def generate_images(model, epoch, test_sample, label):
+    fig, ax = plt.subplots(2, 2, figsize=(6, 6))
     fig.tight_layout(rect=[0, 0, 1, 0.97])
-    fig.subplots_adjust(hspace=.25, wspace=0, bottom=.1)
+    fig.subplots_adjust(hspace=.25, wspace=.3, bottom=.1)
     fig.set_size_inches(10, 6)
     mean, logvar = model.encode(test_sample)
     z = model.reparameterize(mean, logvar)
     predictions = model.sample(z)
     test_sample = tf.reshape(test_sample, [256, 64, 14])
     predictions = tf.reshape(predictions, [256, 64, 14])
+    difference = test_sample - predictions
+    kernel = np.ones((5, 5), np.float32) / 25
+    difference = cv2.filter2D(difference, -1, kernel)
+    difference = np.abs(difference)
+
     for i in range(0, 14):
-        ax[0].set_xticks([])
-        ax[0].set_yticks([])
-        ax[0].grid(False)
-        ax[0].title.set_text('Prediction')
-        ax[0].imshow(predictions[:, :, i], cmap='autumn')
-        ax[1].set_xticks([])
-        ax[1].set_yticks([])
-        ax[1].grid(False)
-        ax[1].title.set_text('Label at epoch {}'.format(epoch))
-        ax[1].imshow(test_sample[:, :, i], cmap='autumn')
+        ax[0, 0].set_xticks([])
+        ax[0, 0].set_yticks([])
+        ax[0, 0].grid(False)
+        ax[0, 0].title.set_text('Prediction')
+        ax[0, 0].imshow(predictions[:, :, i], cmap='autumn')
+        ax[0, 1].set_xticks([])
+        ax[0, 1].set_yticks([])
+        ax[0, 1].grid(False)
+        ax[0, 1].title.set_text('Label at epoch {}'.format(epoch))
+        ax[0, 1].imshow(test_sample[:, :, i], cmap='autumn')
+        ax[1, 0].set_xticks([])
+        ax[1, 0].set_yticks([])
+        ax[1, 0].grid(False)
+        ax[1, 0].title.set_text('Difference')
+        ax[1, 0].imshow(difference[:, :, i], cmap='autumn')
+        ax[1, 1].set_xticks([])
+        ax[1, 1].set_yticks([])
+        ax[1, 1].grid(False)
+        ax[1, 1].title.set_text('Label')
+        ax[1, 1].imshow(y, cmap='autumn')
         plt.show()
 
 
 for epoch in range(1, epochs + 1):
     start_time = time.time()
-    for train_x in train_data:
+    for train_x, _ in train_data:
         train_step(model, train_x, optimizer)
     end_time = time.time()
 
     loss = tf.keras.metrics.Mean()
-    for test_x in test_data.take(2):
+    for test_x, y in test_data.take(2):
         loss, _, _ = compute_loss(model, test_x)
         if epoch % 25 == 0:
-            generate_images(model, epoch, test_x)
+            generate_images(model, epoch, test_x, y)
+    for train_x, y in train_data.take(2):
+        loss, _, _ = compute_loss(model, train_x)
+        if epoch % 25 == 0:
+            generate_images(model, epoch, train_x, y)
     print('Epoch: {}, Test set ELBO: {}, time elapse for current epoch: {}'
           .format(epoch, loss, end_time - start_time))
     print('Total loss: {}, Reconstruction loss: {}, KL Divergence: {}, MSE: {}'

@@ -3,8 +3,8 @@ from tensorflow import keras
 import numpy as np
 from datetime import datetime
 
-training_data_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/TrainingData.npy'
-testing_data_path = '/DATA/TBI/Datasets/NPFiles/CardiacBalanced/ValidationData.npy'
+training_data_path = '/DATA/TBI/Datasets/NPFiles/DispBal/TrainingData.npy'
+testing_data_path = '/DATA/TBI/Datasets/NPFiles/DispBal/ValidationData.npy'
 
 # channel 0: outside the brain
 # channel 1: no-bleed
@@ -22,9 +22,16 @@ class_factor = [0.06725, 0.03851, 0.89423]
 def preProcess(input_data):
     print(input_data)
     t_y = tf.gather(input_data, 0, axis=3)  # weeding out the labels
-    t_x = tf.gather(input_data, list(range(1, 15)), axis=3)  # weeding out the x data
-    t_y = tf.cast(t_y, dtype=tf.int32)  # choose int32 types for the data
-    t_y = tf.one_hot(t_y, depth=OUTPUT_CHANNELS)  # convert to 3 bits to represent classes
+    t_x = tf.gather(input_data, list(range(1, 11)), axis=3)  # weeding out the x data
+    # t_y = tf.cast(t_y, dtype=tf.int32)  # choose int32 types for the data
+    # t_y = tf.one_hot(t_y, depth=OUTPUT_CHANNELS)  # convert to 3 bits to represent classes
+    class_2 = tf.where(t_y >= 1.05, t_y - 1, 0)
+    class_2 = tf.where(class_2 > 1, 1, class_2)
+    class_1 = tf.expand_dims(tf.where(t_y > 0.95, 1 - class_2, 0), axis=3)
+    class_0 = tf.expand_dims(tf.where(t_y <= 0.95, 1, 0), axis=3)
+    class_2 = tf.expand_dims(class_2, axis=3)
+    t_y = tf.concat(([class_0, class_1, class_2]), axis=3)
+    t_y = tf.convert_to_tensor(t_y, dtype=tf.float32)
     tf.debugging.check_numerics(t_x, "x contains Nan")
     tf.debugging.check_numerics(t_x, "y contains Nan")
     return t_x, t_y  # return input and output
@@ -43,7 +50,7 @@ train_data.batch(BATCH_SIZE)  # make data into batches, based on batch size
 print(train_data)
 test_data.batch(BATCH_SIZE)  # make data into batches, based on batch size
 
-image_shape = [xdim, ydim, 14]
+image_shape = [xdim, ydim, 10]
 
 # Code for finding class distributions
 for _, label in train_data:
@@ -106,7 +113,7 @@ def upsample(filters, size, apply_dropout=False):
 
 
 def Mask_Gen():
-    inputs = keras.layers.Input(shape=[xdim, ydim, 14])
+    inputs = keras.layers.Input(shape=[xdim, ydim, 10])
 
     fScaleFactor = 8
     # encoder layers
@@ -247,4 +254,4 @@ mask_gen.fit(train_data,
              callbacks=[tensorboard_callback]
              )
 
-mask_gen.save('/DATA/TBI/Datasets/Models/tbi_segnet_C1')
+mask_gen.save('/DATA/TBI/Datasets/Models/tbi_segnet_D1')
