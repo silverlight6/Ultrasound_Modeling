@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
-from sklearn.metrics import confusion_matrix
+# from sklearn.metrics import confusion_matrix
 import datetime
 import os
 import multiprocessing
@@ -71,8 +71,8 @@ def preProcess(input_data, xdim=160, ydim=192):
 def preProcess1(input_data, xdim=160, ydim=192):
     tt_y = input_data[image_num, :, :, :, 0]
     # print(tt_y.shape)
-    bMode = input_data[image_num, :, :, :, 7]
-    tt_x = input_data[image_num, :, :, :, 1:7]
+    bMode = input_data[image_num, :, :, :, 11]
+    tt_x = input_data[image_num, :, :, :, 1:11]
     tt_x = np.array(tt_x)
     tt_y = np.array(tt_y)
     tt_y = tt_y.reshape([xdim, ydim])
@@ -80,19 +80,19 @@ def preProcess1(input_data, xdim=160, ydim=192):
     return tt_x, tt_y, bMode
 
 
-def preProcess2(input_data, xdim=256, ydim=64):
+def preProcess2(input_data, xdim=256, ydim=80):
     y_tr = input_data[:, :, :, :, 0]
     train_data = np.delete(input_data, 0, 4)
     x_tr = np.array(train_data)
     y_tr = y_tr[:, 0, :, :]
     x_tr = x_tr[image_num, :, :, :, :]
     y_tr = y_tr[image_num, :, :]
-    y_tr = y_tr.reshape([256, 64])
+    y_tr = y_tr.reshape([256, 80])
     x_tr = x_tr.astype(dtype=np.float64)
     return x_tr, y_tr
 
 
-def CardiacPreProcess(input_data, xdim=256, ydim=64, paths=None):
+def CardiacPreProcess(input_data, xdim=256, ydim=80, paths=None):
     global image_num
     t_x = []
     t_p = []
@@ -142,7 +142,7 @@ def Cardiac_Model():
             if image_num >= pathLen:
                 break
             lock.acquire()
-            [testX, testY] = preProcess2(data_m, xdim=256, ydim=64)
+            [testX, testY] = preProcess2(data_m, xdim=256, ydim=80)
             lock.release()
             p = multiprocessing.Process(target=PolarProcess, args=(testX, testY, pathNames[image_num]))
             p.start()
@@ -167,7 +167,7 @@ def Polar_Model(sAll=False):
         print(pathNames)
         index = findImage(pathNames)
         # print(pathNames)
-        [testX, testY, bMode] = preProcess1(data_m, xdim=256, ydim=64)
+        [testX, testY, bMode] = preProcess1(data_m, xdim=256, ydim=80)
         PolarProcess(testX, testY, name=pathNames[index], bMode=bMode)
     else:
         processes = []
@@ -178,7 +178,7 @@ def Polar_Model(sAll=False):
                 if i >= pathLen:
                     break
                 image_num = i
-                [testX, testY, bMode] = preProcess1(data_m, xdim=256, ydim=64)
+                [testX, testY, bMode] = preProcess1(data_m, xdim=256, ydim=80)
                 p = multiprocessing.Process(target=PolarProcess, args=(testX, testY, pathNames[i], bMode))
                 p.start()
                 processes.append(p)
@@ -191,34 +191,33 @@ def Polar_Model(sAll=False):
         print(tmpcnt)
         # for i in range(0, len(pathNames)):
         #     image_num = i
-        #     [testX, testY] = preProcess1(data_m, xdim=256, ydim=64)
+        #     [testX, testY] = preProcess1(data_m, xdim=256, ydim=80)
         #     PolarProcess(testX, testY, name=pathNames[i])
 
 
 def PolarProcess(testX, testY, name, bMode=None, paths=None):
 
     # DispInput(testX)
-    # SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/tbi_segnet_2_1",
-    #                                     custom_objects={'my_loss_cat': my_loss_cat})
-    SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/ResNeSt_D1",
+    SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/ResNeSt_T1",
                                         custom_objects={'my_loss_cat': my_loss_cat})
-    # SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/ResNeSt_D1")
+    # SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/Transformer_1")
     # prob = SegNet({"imp0": tf.expand_dims(testX[0, :, :, :], 0), "imp1": tf.expand_dims(testX[1, :, :, :], 0),
     #                "imp2": tf.expand_dims(testX[2, :, :, :], 0), "imp3": tf.expand_dims(testX[3, :, :, :], 0),
     #                "imp4": tf.expand_dims(testX[4, :, :, :], 0), "imp5": tf.expand_dims(testX[5, :, :, :], 0),
     #                "imp6": tf.expand_dims(testX[6, :, :, :], 0), "imp7": tf.expand_dims(testX[7, :, :, :], 0),
     #                "imp8": tf.expand_dims(testX[8, :, :, :], 0), "imp9": tf.expand_dims(testX[9, :, :, :], 0)})
-    prob = SegNet(testX)
+    prob, _ = SegNet(testX)
     probOut = prob[:, :, :, -1]
     prob = np.array(prob)
-    prob = prob.reshape([256, 64, -1])
+    prob = prob.reshape([256, 80, -1])
 
     probOut = np.array(probOut)
-    probOut = probOut.reshape(256, 64)
+    probOut = probOut.reshape(256, 80)
     bMode = np.array(bMode)
-    bMode = bMode.reshape(256, 64)
+    bMode = bMode.reshape(256, 80)
+    bMode = bMode * -1
 
-    probO = np.ones([256, 64])
+    probO = np.ones([256, 80])
     probO -= prob[:, :, 0]
     probO -= prob[:, :, 1] * .5
     probO += prob[:, :, 2]
@@ -226,7 +225,7 @@ def PolarProcess(testX, testY, name, bMode=None, paths=None):
     dispDict["probMap"] = True
     dispDict["bMode"] = True
     # print(testY.shape)
-    Display(probO, testY, name=name, bMode=bMode, numDim=3, probmap=probOut)
+    Display(probO, testY, name=name, numDim=3, bMode=bMode, probmap=probOut)
     return
 
 

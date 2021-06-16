@@ -4,72 +4,77 @@
 # # Second biggest change is moving from using a prebuilt ResNet base to a untrained and hand coded ResNeSt base.
 # # The third change is I don't do a downsampling when flattening for patches to the transformer like the paper calls for
 
-import math
 import datetime
-
 import tensorflow as tf
 import numpy as np
 
-
 wDecay= tf.keras.regularizers.L2(l2=0.00001)
 # wDecay = None
-
+tf.executing_eagerly()
 
 class Attention(tf.Module):
-    def __init__(self, num_attention_heads=8, attention_head_size=1280, attention_dropout_rate=0.0):
+    def __init__(self, num_heads=4, attention_head_size=512, attention_dropout_rate=0.0):
         super(Attention, self).__init__()
-        self.num_attention_heads = num_attention_heads
-        self.attention_head_size = int(attention_head_size / self.num_attention_heads)
-        self.all_head_size = self.num_attention_heads * self.attention_head_size
-
-        self.query = tf.keras.layers.Dense(self.all_head_size)
-        self.key = tf.keras.layers.Dense(self.all_head_size)
-        self.value = tf.keras.layers.Dense(self.all_head_size)
-
-        self.out = tf.keras.layers.Dense(attention_head_size)
+        self.num_heads = num_heads
+        self.hidden_size = attention_head_size
+        self.qkv_size = attention_head_size // self.num_heads
+        self.query = tf.keras.layers.Dense(self.hidden_size, kernel_regularizer=wDecay, dtype=tf.float32)
+        self.key = tf.keras.layers.Dense(self.hidden_size, kernel_regularizer=wDecay, dtype=tf.float32)
+        self.value = tf.keras.layers.Dense(self.hidden_size, kernel_regularizer=wDecay, dtype=tf.float32)
+        self.out = tf.keras.layers.Dense(self.hidden_size, kernel_regularizer=wDecay, dtype=tf.float32)
         self.attn_dropout = tf.keras.layers.Dropout(attention_dropout_rate)
         self.proj_dropout = tf.keras.layers.Dropout(attention_dropout_rate)
 
-        self.softmax = tf.keras.layers.Softmax()
+        self.softmax = tf.keras.layers.Softmax(axis=3)
 
-    def transpose_for_scores(self, x):
-        new_x_shape = tf.size(x)[:-1] + (self.num_attention_heads, self.attention_head_size)
-        x = tf.reshape(x, *new_x_shape)
+
+    def split_heads(self, x, batch_size):
+        """Split the last dimension into (num_heads, depth).
+        Transpose the result such that the shape is (batch_size, num_heads, seq_len, depth)
+        """
+        x = tf.reshape(x, (batch_size, -1, self.num_heads, self.qkv_size))
         return tf.transpose(x, perm=[0, 2, 1, 3])
 
     def forward(self, hidden_states):
+        batch_size = tf.shape(hidden_states)[0]
         query_layer = self.query(hidden_states)
         key_layer = self.key(hidden_states)
         value_layer = self.value(hidden_states)
-        attention_scores = tf.matmul(tf.transpose(key_layer, perm=[0, 2, 1]), query_layer)
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        query_layer = self.split_heads(query_layer, batch_size)
+        key_layer = self.split_heads(key_layer, batch_size)
+        value_layer = self.split_heads(value_layer, batch_size)
+
+        attention_scores = tf.matmul(a=query_layer, b=key_layer, transpose_b=True)
+        attention_scores = attention_scores / tf.math.sqrt(tf.cast(self.num_heads, dtype=tf.float32))
         attention_probs = self.softmax(attention_scores)
         weights = attention_probs
         attention_probs = self.attn_dropout(attention_probs)
 
-        context_layer = tf.matmul(value_layer, attention_probs)
-        tf.transpose(context_layer, perm=[0, 2, 1])
-        attention_output = self.out(context_layer)
+        context_layer = tf.matmul(attention_probs, value_layer)
+        context_layer = tf.transpose(context_layer, perm=[0, 2, 1, 3])
+        reshaped_layer = tf.reshape(context_layer, (batch_size, -1, self.hidden_size))
+        attention_output = self.out(reshaped_layer)
         attention_output = self.proj_dropout(attention_output)
+
         return attention_output, weights
 
     def __call__(self, hidden_states, *args, **kwargs):
-        atte, w = self.forward(hidden_states)
-        return atte, w
+        atte, weights = self.forward(hidden_states)
+        return atte, weights
 
 
 class Mlp(tf.Module):
-    def __init__(self, hidden_size=1280, mlp_dim=2048, dropout_rate=0.0):
+    def __init__(self, hidden_size=512, mlp_dim=2048, dropout_rate=0.0):
         super(Mlp, self).__init__()
-        self.fc1 = tf.keras.layers.Dense(mlp_dim)
-        self.fc2 = tf.keras.layers.Dense(hidden_size)
-        self.act_fn = tf.keras.layers.LeakyReLU()
+        self.fc1 = tf.keras.layers.Dense(mlp_dim, dtype=tf.float32)
+        self.fc2 = tf.keras.layers.Dense(hidden_size, dtype=tf.float32)
+        # self.relu = tf.keras.layers.ReLU()
         self.dropout = tf.keras.layers.Dropout(dropout_rate)
 
     def forward(self, x):
         x = self.fc1(x)
         x = self.dropout(x)
-        x = self.act_fn(x)
+        x = tf.keras.activations.gelu(x)
         x = self.fc2(x)
         x = self.dropout(x)
         return x
@@ -83,36 +88,35 @@ class Embeddings(tf.Module):
     """Construct the embeddings from patch, position embeddings.
     """
 
-    def __init__(self, img_size, hidden_size=1280, dropout_rate=0.0):
+    def __init__(self, img_size, hidden_size=512, dropout_rate=0.0):
         super(Embeddings, self).__init__()
         self.img_size = img_size
         self.hidden_size = hidden_size
-        grid_size = (8, 2)
-        # patch_size = 4 x 5
+        grid_size = (16, 5)
+        # patch_size = 8 x 10
         patch_size = (img_size[0] // 8 // grid_size[0], img_size[1] // 8 // grid_size[1])
         # real means what it would correlate to for a full size image or 64 x 80
         patch_size_real = (patch_size[0] * 8, patch_size[1] * 8)
+        self.seq_len = grid_size[0] * grid_size[1]
         self.n_patches = (img_size[0] // patch_size_real[0]) * (img_size[1] // patch_size_real[1])
         # # This line is going to the ResNest model. Change this line out if using 1 or 3d input and are wanting to
         # # use a transfer learning network.
         # self.hybrid_model = ResNetV2(block_units=(3, 4, 9), width_factor=1)
         self.hybrid_model = ResNest(256, 80, 10, radix=3, ksize=3, kpaths=3)
 
-        self.patch_embeddings = tf.keras.layers.Conv2D(filters=hidden_size, kernel_size=patch_size, padding='valid',
-                                                       strides=patch_size)
-        self.position_embeddings = tf.zeros([1, self.n_patches, hidden_size])
+        # Try using a reshape instead of a convolution later on.
+        # self.patch_embeddings = tf.keras.layers.Conv2D(filters=hidden_size, kernel_size=patch_size, padding='same',
+        #                                                strides=patch_size, kernel_regularizer=wDecay)
+        self.patch_embeddings = tf.keras.layers.Conv2D(filters=hidden_size, kernel_size=1, padding='valid',
+                                                       strides=1, kernel_regularizer=wDecay)
+        self.position_embeddings = tf.zeros([1, self.seq_len, self.hidden_size])
 
         self.dropout = tf.keras.layers.Dropout(dropout_rate)
 
     def forward(self, x):
         x, features = self.hybrid_model(x)
-        x = self.patch_embeddings(x)  # (B, hidden. n_patches^(1/2), n_patches^(1/2))
-        x = tf.reshape(x, [-1, self.n_patches, self.hidden_size])
-        # # Not sure if this line is required. There will likely be an error here with dimensionality but
-        # # I will debug it when it comes along.
-        # x = tf.transpose(x, [-1, -2])  # (B, n_patches, hidden)
-        # print(x)
-        # print(self.position_embeddings)
+        x = self.patch_embeddings(x)  # (B, hidden. grid[0], grid[1])
+        x = tf.reshape(x, [-1, self.seq_len, self.hidden_size])
         embeddings = x + self.position_embeddings
         embeddings = self.dropout(embeddings)
         return embeddings, features
@@ -123,11 +127,11 @@ class Embeddings(tf.Module):
 
 
 class Block(tf.Module):
-    def __init__(self, hidden_size=1280):
+    def __init__(self, hidden_size=512):
         super(Block, self).__init__()
         self.hidden_size = hidden_size
-        self.attention_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        self.ffn_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.attention_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
+        self.ffn_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
         self.ffn = Mlp()
         self.attn = Attention()
 
@@ -149,11 +153,11 @@ class Block(tf.Module):
 
 
 class Encoder(tf.Module):
-    def __init__(self, xdim, ydim, num_layers=12):
+    def __init__(self, xdim, ydim, num_layers=4):
         super(Encoder, self).__init__()
         self.xDim = xdim
         self.yDim = ydim
-        self.encoder_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.encoder_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
         self.Transformer_layers = []
         for _ in range(num_layers):
             Transformer_layers = Block()
@@ -163,10 +167,8 @@ class Encoder(tf.Module):
     def forward(self, hidden_states):
         attn_weights = []
         for layer_block in self.Transformer_layers:
-            y, weights = layer_block(hidden_states)
+            hidden_states, weights = layer_block(hidden_states)
             attn_weights.append(weights)
-            # This line is experiemental.
-            hidden_states += y
         encoded = self.encoder_norm(hidden_states)
         return encoded, attn_weights
 
@@ -184,7 +186,6 @@ class Transformer(tf.Module):
     def forward(self, input_ids):
         embedding_output, features = self.embeddings(input_ids)
         encoded, attn_weights = self.encoder(embedding_output)  # (B, n_patch, hidden)
-        # print(encoded)
         return encoded, attn_weights, features
 
     def __call__(self, input_ids, *args, **kwargs):
@@ -193,30 +194,43 @@ class Transformer(tf.Module):
 
 # This may see some changes if I want to use a different style of decoder
 class DecoderBlock(tf.Module):
-    def __init__(
-            self,
-            out_channels,
-    ):
+    def __init__(self, out_channels):
         super().__init__()
-        self.conv1 = tf.keras.layers.Conv2D(
-            filters=out_channels,
-            kernel_size=3,
-            strides=1,
-            padding='SAME',
-            kernel_initializer=tf.keras.initializers.HeNormal(),
-            kernel_regularizer=wDecay
+        self.conv1_0 = tf.keras.layers.Conv2D(out_channels // 4, 1, strides=1,padding='SAME',
+                                         kernel_initializer=tf.keras.initializers.HeNormal(),
+                                         kernel_regularizer=wDecay
         )
+        self.conv1_1 = tf.keras.layers.Conv2D(out_channels // 4, 3, strides=1, padding='SAME',
+                                         kernel_initializer=tf.keras.initializers.HeNormal(),
+                                         kernel_regularizer=wDecay,
+                                         dilation_rate=(2, 2))
+        self.conv1_2 = tf.keras.layers.Conv2D(out_channels // 4, 3, strides=1, padding='SAME',
+                                         kernel_initializer=tf.keras.initializers.HeNormal(),
+                                         kernel_regularizer=wDecay,
+                                         dilation_rate=(4, 4))
+        self.conv1_3 = tf.keras.layers.Conv2D(out_channels // 4, 3, strides=1, padding='SAME',
+                                         kernel_initializer=tf.keras.initializers.HeNormal(),
+                                         kernel_regularizer=wDecay,
+                                         dilation_rate=(8, 8))
+
         self.LeakyReLU1 = tf.keras.layers.LeakyReLU()
         self.bn1 = tf.keras.layers.BatchNormalization()
-        self.conv2 = tf.keras.layers.Conv2D(
-            filters=out_channels,
-            kernel_size=3,
-            strides=1,
-            padding='SAME',
-            kernel_initializer=tf.keras.initializers.HeNormal(),
-            kernel_regularizer=wDecay
-        )
-        self.LeakyReLU2 = tf.keras.layers.LeakyReLU()
+        self.conv2_0 = tf.keras.layers.Conv2D(out_channels // 4, 1, strides=1, padding='SAME',
+                                         kernel_initializer=tf.keras.initializers.HeNormal(),
+                                         kernel_regularizer=wDecay
+                                         )
+        self.conv2_1 = tf.keras.layers.Conv2D(out_channels // 4, 3, strides=1, padding='SAME',
+                                         kernel_initializer=tf.keras.initializers.HeNormal(),
+                                         kernel_regularizer=wDecay,
+                                         dilation_rate=(2, 2))
+        self.conv2_2 = tf.keras.layers.Conv2D(out_channels // 4, 3, strides=1, padding='SAME',
+                                         kernel_initializer=tf.keras.initializers.HeNormal(),
+                                         kernel_regularizer=wDecay,
+                                         dilation_rate=(4, 4))
+        self.conv2_3 = tf.keras.layers.Conv2D(out_channels // 4, 3, strides=1, padding='SAME',
+                                         kernel_initializer=tf.keras.initializers.HeNormal(),
+                                         kernel_regularizer=wDecay,
+                                         dilation_rate=(8, 8))
         self.bn2 = tf.keras.layers.BatchNormalization()
         # self.up = tf.keras.layers.Conv2DTranspose(out_channels, kernel_size=4, strides=2, padding='same')
         self.up = tf.keras.layers.UpSampling2D(size=2)
@@ -227,12 +241,21 @@ class DecoderBlock(tf.Module):
         if skip is not None:
             # skips come in d = [256, 128, 64]
             x = tf.concat([x, skip], axis=3)
-        x = self.conv1(x)
+        x1 = self.conv1_0(x)
+        x2 = self.conv1_1(x)
+        x3 = self.conv1_2(x)
+        x4 = self.conv1_3(x)
+        x = tf.concat([x1, x2, x3, x4], axis=3)
         x = self.bn1(x)
         x = self.LeakyReLU1(x)
-        x = self.conv2(x)
+        # possible experiment is to reuse the earlier convolutions here.
+        x1 = self.conv2_0(x)
+        x2 = self.conv2_1(x)
+        x3 = self.conv2_2(x)
+        x4 = self.conv2_3(x)
+        x = tf.concat([x1, x2, x3, x4], axis=3)
         x = self.bn2(x)
-        x = self.LeakyReLU2(x)
+        x = self.LeakyReLU1(x)
         # output has [128, 64, 16] channels
         return x
 
@@ -244,7 +267,7 @@ class DecoderBlock(tf.Module):
 class DecoderCup(tf.Module):
     def __init__(self, num_classes):
         super().__init__()
-        head_channels = 512
+        head_channels = 256
         self.conv_more = tf.keras.layers.Conv2D(
             filters=head_channels,
             kernel_size=3,
@@ -256,7 +279,7 @@ class DecoderCup(tf.Module):
         self.LeakyReLU1 = tf.keras.layers.LeakyReLU()
         self.bn1 = tf.keras.layers.BatchNormalization()
 
-        skip_channels = [256, 128, 64, 16]
+        skip_channels = [256, 128, 64]
         blocks = [
             DecoderBlock(sk_ch) for sk_ch in skip_channels
         ]
@@ -264,10 +287,12 @@ class DecoderCup(tf.Module):
         self.blocks = blocks
         self.head = tf.keras.layers.Conv2D(self.num_classes, kernel_size=3, padding='SAME', activation='softmax',
                                            kernel_initializer=tf.initializers.HeNormal, kernel_regularizer=wDecay)
+        self.up = tf.keras.layers.UpSampling2D(size=2)
 
     def forward(self, hidden_states, features=None):
         # This line is in shape batch_size, num_patches, hidden_state size
         tfShape = tf.shape(hidden_states)
+        y = hidden_states
         x = tf.reshape(tensor=hidden_states, shape=[tfShape[0], 16, 5, -1])
         x = self.conv_more(x)
         x = self.bn1(x)
@@ -278,6 +303,11 @@ class DecoderCup(tf.Module):
             else:
                 skip = None
             x = decoder_block(x, skip=skip)
+            # print(tfShape)
+            # print([tfShape[0], tfShape[1] * tf.pow(2, i + 1), tfShape[2] * tf.pow(2, i + 1), -1])
+            x0 = tf.reshape(y, [tfShape[0], 16 * tf.pow(2, i+1), 5 * tf.pow(2, i+1), -1])
+            x = tf.concat([x, x0], axis=3)
+        x = self.up(x)
         x = self.head(x)
         return x
 
@@ -290,23 +320,21 @@ class VisionTransformer(tf.Module):
         self.num_classes = num_classes
         self.transformer = Transformer(img_size)
         self.decoder = DecoderCup(num_classes)
-        self.initialize = self.forward(np.zeros([8, 256, 80, 10]))
+        self.initialize = self.forward(np.zeros([16, 256, 80, 10]))
         self.visionModel = self.model()
         # https://github.com/keras-team/keras/blob/master/keras/losses.py
         # I am today years old when I realized keras makes their loss implementations public.
-        # self.loss = tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1)
-        self.loss = self.my_loss_cat
+        self.loss = tf.keras.losses.CategoricalCrossentropy()
+        # self.loss = self.my_loss_cat
         self.learning_rate = learning_rate
-        self.optimizer = tf.optimizers.SGD(self.learning_rate)
+        self.optimizer = tf.optimizers.Adam(self.learning_rate)
         self.alpha = 2
         self.class_factor = [0.06329, 0.027567, 0.90914]
 
 
     def forward(self, x):
         x, attn_weights, features = self.transformer(x)  # (B, n_patch, hidden)
-        # print(x)
         logits = self.decoder(x, features)
-        # print(logits)
         return logits, attn_weights
 
     '''
@@ -320,20 +348,15 @@ class VisionTransformer(tf.Module):
 
         with tf.GradientTape() as tape:
             # # Really not sure if this line of code is helpful or just slows things down. Uncomment if you want.
-            # tape.watch(self.visionModel.trainable_variables)
+            tape.watch(self.visionModel.trainable_variables)
             logits, _ = self.forward(x)
             smce = self.loss(y_true=y, y_pred=logits)
             smce += sum(self.visionModel.losses)
         if train:
             gradients = tape.gradient(smce, self.visionModel.trainable_variables)
-            clip_gradients, _ = tf.clip_by_global_norm(gradients, 2.0)
+            clip_gradients, _ = tf.clip_by_global_norm(gradients, 5.0)
             self.optimizer.apply_gradients(zip(clip_gradients, self.visionModel.trainable_variables))
-
-        pred = tf.math.argmax(logits, axis=-1)
-        correct_pred = tf.equal(pred, tf.math.argmax(y, axis=-1))
-        correct_pred = tf.reshape(correct_pred, [-1])
-        accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
-        return smce, accuracy, logits
+        return smce, logits
 
     def model(self):
         inputA = tf.keras.layers.Input(shape=[256, 80, 10])
@@ -350,23 +373,19 @@ class VisionTransformer(tf.Module):
         # CE = 0
         y_true *= 0.9
         y_true += (0.1 / self.num_classes)
-        # tf.print(y_true[0, 120, :, :])
         # scale_factor = tf.cast(1 / tf.reduce_sum(y_true, axis=0), tf.float32)
         # scale_factor = tf.divide(x=scale_factor, y=256*80)
         y_pred = tf.clip_by_value(y_pred, 1e-7, 1. - 1e-7)
 
         # just a fun experiment
-        randOffSet = tf.random.normal(shape=[256, 80], mean=0, stddev=1)
-        # CE = -tf.reduce_sum(y_true * tf.cast(tf.math.log(y_pred), tf.float32), axis=3)
+        # randOffSet = tf.random.normal(shape=[256, 80], mean=0, stddev=1)
+        CE = -3 * tf.reduce_sum(y_true * tf.cast(tf.math.log(y_pred), tf.float32) * self.class_factor, axis=[0,3])
 
-        # print(scale_factor)
-        CE = -tf.reduce_sum(y_true * tf.cast(tf.math.log(y_pred), tf.float32) * tf.pow(1.0 - y_pred, self.alpha), axis=[0, 3])
+        # CE = -tf.reduce_sum(y_true * tf.cast(tf.math.log(y_pred), tf.float32) * tf.pow(1.0 - y_pred, self.alpha), axis=[0, 3])
         # CE = -3 * tf.reduce_sum(y_true * tf.cast(tf.math.log(y_pred), tf.float32), axis=3)
-        CE += randOffSet * 0.1
+        # CE += randOffSet * 0.1
 
-
-
-        # -3 if using class factor, -1 otherwise. (class factor in my imp   lementation is divides by number of classes)
+        # -3 if using class factor, -1 otherwise. (class factor in my implementation is divides by number of classes)
         # tf.print(CE)
         return CE
 
@@ -496,7 +515,9 @@ recall = tf.keras.metrics.Recall(name='recall')
 pre_c2 = tf.keras.metrics.Precision(name='precision_c2')
 re_c2 = tf.keras.metrics.Recall(name='recall_c2')
 mio = tf.keras.metrics.MeanIoU(name='mean_iou', num_classes=3)
-
+tr_recall = tf.keras.metrics.Recall(name='tr_recall')
+tr_precision = tf.keras.metrics.Precision(name='tr_precision')
+tr_mio = tf.keras.metrics.MeanIoU(name='tr_mio', num_classes=3)
 
 def training(neuralnet, dataset, epochs, batch_size):
     print("\nTraining to %d epochs (%d of minibatch size)" % (epochs, batch_size))
@@ -513,10 +534,13 @@ def training(neuralnet, dataset, epochs, batch_size):
             # Get the data for the next batch
             x_tr, y_tr, terminator = dataset.next_train(batch_size)  # y_tr does not used in this prj.
             # Take a step from that batch
-            loss, accuracy, class_score = neuralnet.step(x=x_tr, y=y_tr, train=True)
+            loss, class_score = neuralnet.step(x=x_tr, y=y_tr, train=True)
             # Loss is 256x80 so reduce to 1 number
             loss = tf.reduce_sum(loss)
             iteration += 1
+            tr_recall.update_state(y_tr, class_score)
+            tr_precision.update_state(y_tr, class_score)
+            tr_mio.update_state(y_tr, class_score)
             print('.', end='')
             if (iteration + 1) % 100 == 0:
                 print()
@@ -524,8 +548,11 @@ def training(neuralnet, dataset, epochs, batch_size):
 
             # neuralnet.save_params()
         print()
-        print("Epoch [%d / %d] (%d iteration)  Loss:%.5f, Acc:%.5f"
-              % (epoch, epochs, iteration, loss, accuracy))
+        print("Epoch [%d / %d] (%d iteration)  Loss:%.5f, Recall:%.5f, Precision:%.5f, IoU:%.5f"
+              % (epoch, epochs, iteration, loss, tr_recall.result(), tr_precision.result(), tr_mio.result()))
+        tr_recall.reset_states()
+        tr_precision.reset_states()
+        tr_mio.reset_states()
         if prev_loss == loss:
             print("Model is throwing a fit")
             print(class_score)
@@ -533,22 +560,24 @@ def training(neuralnet, dataset, epochs, batch_size):
         if epoch % 5 == 0:
             test(neuralnet, dataset, epoch)
         # test(neuralnet, dataset, epoch)
-        # if iteration < 10000:
-        #     if neuralnet.learning_rate == 4e-3:
-        #         print("learning rate --> 1e-3")
-        #     neuralnet.learning_rate = 1e-3
-        # elif iteration < 20000:
-        #     if neuralnet.learning_rate == 1e-3:
-        #         print("learning rate --> 3e-4")
-        #     neuralnet.learning_rate = 3e-4
-        # elif iteration < 30000:
-        #     if neuralnet.learning_rate == 3e-4:
-        #         print("learning rate --> 1e-4")
-        #     neuralnet.learning_rate = 1e-4
-        # else:
-        #     if neuralnet.learning_rate == 1e-4:
-        #         print("learning rate --> 1e-5")
-        #     neuralnet.learning_rate = 1e-5
+        if iteration < 5000:
+            neuralnet.learning_rate = 1e-3
+        elif iteration < 10000:
+            if neuralnet.learning_rate == 4e-3:
+                print("learning rate --> 1e-3")
+            neuralnet.learning_rate = 1e-3
+        elif iteration < 20000:
+            if neuralnet.learning_rate == 1e-3:
+                print("learning rate --> 3e-4")
+            neuralnet.learning_rate = 3e-4
+        elif iteration < 30000:
+            if neuralnet.learning_rate == 3e-4:
+                print("learning rate --> 1e-4")
+            neuralnet.learning_rate = 1e-4
+        else:
+            if neuralnet.learning_rate == 1e-4:
+                print("learning rate --> 1e-5")
+            neuralnet.learning_rate = 1e-5
 
 
 def test(neuralnet, dataset, epoch):
@@ -560,7 +589,7 @@ def test(neuralnet, dataset, epoch):
     total_loss = 0
     while True:
         x_te, y_te, terminator = dataset.next_test(1)  # y_te does not used in this prj.
-        loss, accuracy, class_score = neuralnet.step(x=x_te, y=y_te, train=False)
+        loss, class_score = neuralnet.step(x=x_te, y=y_te, train=False)
         loss = tf.reduce_sum(loss)
         precision.update_state(y_te, class_score)
         recall.update_state(y_te, class_score)
@@ -626,9 +655,11 @@ class ResNest(tf.Module):
         self.conv1_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2)
         self.conv2_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2)
         self.conv3_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2)
+        self.conv4_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2)
         self.conv_1 = residual_S(ksize=self.ksize, outchannel=64, radix=self.radix, kpaths=self.kpaths)
         self.conv_2 = residual_S(ksize=self.ksize, outchannel=128, radix=self.radix, kpaths=self.kpaths)
-        self.conv_3 = residual_S(ksize=self.ksize, outchannel=256, radix=self.radix, kpaths=self.kpaths)
+        self.conv_3 = residual_S(ksize=self.ksize, outchannel=128, radix=self.radix, kpaths=self.kpaths)
+        self.conv_4 = residual_S(ksize=self.ksize, outchannel=128, radix=self.radix, kpaths=self.kpaths)
         # block_channels = [64, 128, 256]
         # self.concats_1 = None
         # self.initialize = self.forward(np.zeros([1, 256, 80, 10]))
@@ -654,8 +685,10 @@ class ResNest(tf.Module):
         x_2 = self.conv_2(x)
         x = self.conv3_pool(x_2)
         x_3 = self.conv_3(x)
+        x = self.conv4_pool(x_3)
+        x_4 = self.conv_4(x)
         # resNest = tf.keras.Model(inputs=img_input, outputs=[result, [result, conv2_2, conv2_1]])
-        return x_3, [x_3, x_2, x_1]
+        return x_4, [x_3, x_2, x_1]
 
     def __call__(self, x, *args, **kwargs):
         return self.forward(x)
@@ -803,10 +836,10 @@ def main():
     dataset = Dataset(train_data, val_data)
     # config = tf.estimator.RunConfig(train_distribute=mirrored_strategy)
     neuralnet = VisionTransformer()
-    tf.keras.utils.plot_model(neuralnet.visionModel, to_file='TransUNet.png', show_shapes=True)
+    tf.keras.utils.model_to_dot(neuralnet.visionModel, to_file='TransUNet_dot.png', show_shapes=True)
 
-    # print(neuralnet.resModel.summary())
-    # print(len(neuralnet.visionModel.layers))
+    print(neuralnet.visionModel.summary())
+    print(len(neuralnet.visionModel.layers))
     training(neuralnet=neuralnet, dataset=dataset, epochs=51, batch_size=16)
     neuralnet.visionModel.save('/DATA/TBI/Datasets/Models/ResNeSt_T1')
 

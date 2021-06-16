@@ -67,13 +67,13 @@ def FetchTimeData(datapath):
     for i in range(0, 3):
         tOutput[:, :, i] = np.where(brainMask == 0, 0, tOutput[:, :, i])
 
-    tOutput = cv2.resize(tOutput, (64, 256), interpolation=cv2.INTER_CUBIC)
+    tOutput = cv2.resize(tOutput, (80, 256), interpolation=cv2.INTER_CUBIC)
 
     label = label.astype('float32')
-    label = cv2.resize(label, (64, 256), interpolation=cv2.INTER_CUBIC)
+    label = cv2.resize(label, (80, 256), interpolation=cv2.INTER_CUBIC)
 
-    label = label.reshape(256, 64, 1)
-    tOutput = tOutput.reshape(256, 64, 3)
+    label = label.reshape(256, 80, 1)
+    tOutput = tOutput.reshape(256, 80, 3)
 
     combinedData = np.concatenate((label, tOutput), axis=-1)
 
@@ -87,8 +87,8 @@ def FetchPolarAxis(datapath):
     xaxis = np.array(list(Harmonics['xAxis']))
     yaxis = np.array(list(Harmonics['zAxis']))
 
-    xaxis = cv2.resize(xaxis, (64, 256), interpolation=cv2.INTER_AREA)
-    yaxis = cv2.resize(yaxis, (64, 256), interpolation=cv2.INTER_AREA)
+    xaxis = cv2.resize(xaxis, (80, 256), interpolation=cv2.INTER_AREA)
+    yaxis = cv2.resize(yaxis, (80, 256), interpolation=cv2.INTER_AREA)
 
     xaxis += 100
     yaxis -= 4
@@ -100,48 +100,61 @@ def FetchPolarAxis(datapath):
     np.save(savePath + "yAxis.npy", yaxis)
 
 
+def shift(image):
+    r = random.randint(0, 30)
+    c = random.randint(0, 12)
+    direction = random.randint(0, 1)
+    si = image.shape
+    mask2 = np.zeros((si[0], si[1], si[2]), dtype=np.float64)
+    for i in range(0, si[0] - 1):
+        for j in range(0, si[1] - 1):
+            if direction:
+                if 0 <= i + r < si[0] and 0 <= j + c < si[1]:
+                    mask2[i, j, :] = image[i + r, j + c, :]
+            else:
+                if 0 <= i - r < si[0] and 0 <= j - c < si[1]:
+                    mask2[i, j, :] = image[i - r, j - c, :]
+    return mask2
+
+
+def clip(image):
+    r = random.randint(0, 256)
+    c = random.randint(0, 80)
+    ra = random.randint(20, 40)
+    ca = random.randint(10, 20)
+    si = image.shape
+    # print(si)
+    for i in range(0, si[0] - 1):
+        for j in range(0, si[1] - 1):
+            if r + ra > i > r - ra and c + ca > j > c - ca:
+                image[i, j, :] = 0
+    return image
+
+
 def noisy(image, r):
     row, col, ch = image.shape
     mean = 0
-    var = 0.001 + (r % 20 / 1000)
+    # var = 0.001 + (r % 20 / 1000)
+    var = 1
     sigma = var**0.5
     gauss = np.random.normal(mean, sigma, (row, col, ch))
     gauss = gauss.reshape([row, col, ch])
+    gauss /= 5000
     noisy = image + gauss
     return noisy
-
-
-def dataAug(image):
-    r = random.randint(0, 100000)
-    if r % 3:
-        image = np.fliplr(image)
-        image = np.array(image)
-        # print("After flip {}".format(image.shape))
-    # if r % 5:
-    #     image = ndimage.zoom(input=image, zoom=.9 + ((r % 6) / 25), output=image, mode='nearest')
-    if r % 7:
-        image = ndimage.rotate(image, ((r % 6) / 50 - .05), reshape=False)
-        image = np.array(image)
-        # print("After rotate {}".format(image.shape))
-        # print(image[:, :, 0])
-    if r % 11:
-        image[:, :, 1:] = noisy(image[:, :, 1:], r)
-        image = np.array(image)
-        # print("After noise {}".format(image.shape))
-        # print(image[:, :, 0])
-    return image
 
 
 def imageReduc(image):
     output = image
     si = image.shape
-    # print("si = {}".format(si))
-    mask = np.where(image[:, :, 0] == 0, 1, 0)
+    # Where it is outside the brain, mark 1
+    mask = np.where(image[:, :, 0] < 0.1, 1, 0)
+    # Initialize to 0s
     mask2 = np.zeros((si[0], si[1]), dtype=np.int32)
     for _ in range(0, 2):                   # shrinks input by 2 pixels
         for i in range(1, si[0] - 1):
             for j in range(1, si[1] - 1):
-                if mask[i, j] == 1:
+                if mask[i, j] > 1:
                     mask2[i - 1, j] = 1
                     mask2[i, j - 1] = 1
                     mask2[i + 1, j] = 1
@@ -153,11 +166,84 @@ def imageReduc(image):
                     mask2[i, j] = 1
         mask = mask2
         mask2 = np.zeros((si[0], si[1]), dtype=np.int32)
+    # shrink the mask by 2
     output[:, :, 0] = np.where(mask == 1, 0, output[:, :, 0])
     for k in range(1, si[2]):
         output[:, :, k] = np.where(output[:, :, 0] == 0, 0, output[:, :, k])
 
     return output
+
+
+def dataAug(image):
+    r = random.randint(0, 100000)
+    t = random.randint(0, 100000)
+    # flip horizontal
+    if r % 2:
+        image = np.fliplr(image)
+        image = np.array(image)
+        # print("Shape after flip {}".format(image.shape))
+
+    # flip vertical. Optional because it isn't possible in practice.
+    # if t % 2:
+    #     image = np.flipud(image)
+    #     image = np.array(image)
+        # print("Shape after flip {}".format(image.shape))
+
+    if r % 3:
+        image[:, :, :-1] = imageReduc(image[:, :, :-1])
+        # print("Shape after reduc {}".format(image.shape))
+
+    # Contrast
+    if t % 3:
+        # Create histogram
+        brainMask = image[:, :, 0]
+
+        # If not using norm, use this
+        image[:, :, 1:] = np.max(image[:, :, 1:], keepdims=True) * (image[:, :, 1:] - np.min(image[:, :, 1:],
+                          keepdims=True)) / (np.max(image[:, :, 1:], keepdims=True) - np.min(image[:, :, 1:], keepdims=True))
+        # With norm, use this
+        # image[:, :, 1:] = image[:, :, 1:] - np.min(image[:, :, 1:], keepdims=True) /
+        # (np.max(image[:, :, 1:], keepdims=True) - np.min(image[:, :, 1:], keepdims=True))
+        minval = np.percentile(image, 2)
+        maxval = np.percentile(image, 98)
+        image[:, :, 1:] = np.clip(image[:, :, 1:], minval, maxval)
+        # if no norm, use this
+        image[:, :, 1:] = maxval * (image[:, :, 1:] - minval) / (maxval - minval)
+        # if norm use this
+        # image[:, :, 1:] = (image[:, :, 1:] - minval) / (maxval - minval)
+        for i in range(1, image.shape[-1]):
+            image[:, :, i] = np.where(brainMask < 0.1, 0.0, image[:, :, i])
+
+    # Zoom is simply broken. It is doing a total of 0 currently
+    # if r % 5:
+    #     dim = (image.shape[1], image.shape[0])
+    #     image = cv2.resize(image, dim, fx=2, fy=2, interpolation=cv2.INTER_AREA)
+    #     for i in range(1, image.shape[-1]):
+    #         image[:, :, i] = np.where(image[:, :, 0] < 0.1, 0.0, image[:, :, i])
+
+    if r % 5:
+        image = clip(image)
+
+    # Rotate is not realistic for our application plus it tends to look poor.
+    if r % 13:
+        plt.show()
+        image = ndimage.rotate(image, (r % 11) / 5, reshape=False)
+        image = np.array(image)
+        # print("Shape after rotate {}".format(image.shape))
+
+    if t % 2:
+        image = shift(image)
+    if t % 5:
+        image[:, :, 1:] = noisy(image[:, :, 1:], r)
+        image = np.array(image)
+        # print("Shape after noise {}".format(image.shape))
+
+    # plt.figure(figsize=(10, 10))
+    # plt.grid(False)
+    # plt.imshow(image[:, :, 1], cmap='magma')
+    # plt.title("Label After Augmentation")
+    # plt.show()
+    return image
 
 
 def output2DImages(iteration):
@@ -166,19 +252,13 @@ def output2DImages(iteration):
 
     trainingData = manager.list()
     testingData = manager.list()
-    validationData = manager.list()
+    # validationData = manager.list()
     trainingPaths = manager.list()
     testingPaths = manager.list()
-    validationPaths = manager.list()
-    trainingLabels = manager.list()
-    testingLabels = manager.list()
-    validationLabels = manager.list()
-    trainingCycles = manager.list()
-    testingCycles = manager.list()
-    validationCycles = manager.list()
+    # validationPaths = manager.list()
 
-    IPH_patients = [8, 9, 10, 47, 53, 62, 66, 67, 69, 74, 75, 78, 85, 89, 101]
-    bad_patients = [1, 14, 22, 23, 27, 28, 32, 34, 35, 36, 37, 38, 39, 44, 49, 69, 71, 78, 82, 90, 98, 101]
+    IPH_patients = [8, 9, 10, 47, 53, 62, 66, 67, 69, 74, 75, 78, 85, 89, 101, 105, 107, 110, 120, 121, 126, 129, 130]
+    bad_patients = [1, 14, 22, 23, 27, 28, 32, 34, 35, 36, 37, 38, 39, 44, 49, 69, 71, 78, 82, 90, 98, 101, 928]
     timeStart = np.zeros([100])
     timeEnd = np.zeros([100])
     # counting files
@@ -186,15 +266,15 @@ def output2DImages(iteration):
 
     def fileLoop(path, patient_num, iteration, mode):
         iteration = iteration % 10
-        for harmonic in os.listdir(path):
-            if ".mat" in harmonic:
-                # print("Checkpoint 1")
-                hPath = os.path.join(path, harmonic)                  # put file name on path
-                pathName = harmonic[0:17]                             # get path to print
+        for file in os.listdir(path):
+            if ".mat" in file:
+                hPath = os.path.join(path, file)                  # put file name on path
+                pathName = file[0:17]                             # get path to print
+                # timeA = time.time()
+                # print("Loading file {}".format(pathName))
                 Harmonics = loadmat(hPath)
+                # print("Finished file {} at time {}".format(pathName, time.time() - timeA))
                 # print(Harmonics.keys())
-
-                # load each subsection needed
 
                 normalMask = np.array(list(Harmonics['normalMask']))
                 bloodMask = np.array(list(Harmonics['bloodMask']))
@@ -209,19 +289,14 @@ def output2DImages(iteration):
                 else:
                     displacement = np.array(list(Harmonics['displacement']))
                     hrTimes = np.array(list(Harmonics['hrTimes']))
-                    # timeAxis = np.array(list(Harmonics['timeAxis']))
                     hrshape = hrTimes.shape
                     disshape = displacement.shape
-                    # print(disshape)
-                    # print(hrshape)
-                    # print(hrTimes)
-                    # print(timeAxis)
-                    real = np.zeros([disshape[0], disshape[1], 3, hrshape[1] - 1])
-                    imag = np.zeros([disshape[0], disshape[1], 3, hrshape[1] - 1])
+                    real = np.zeros([disshape[0], disshape[1], 5, hrshape[1] - 1])
+                    imag = np.zeros([disshape[0], disshape[1], 5, hrshape[1] - 1])
                     for h in range(0, hrshape[1] - 1):
                         start = int(math.ceil(30 * hrTimes[0, h]))
-                        real[:, :, :, h] = displacement[:, :, start:start + 6:2]
-                        imag[:, :, :, h] = displacement[:, :, start + 6: start + 12:2]
+                        real[:, :, :, h] = displacement[:, :, start:start + 5]
+                        imag[:, :, :, h] = displacement[:, :, start + 5:start + 10]
                     real = np.array(real)
                     imag = np.array(imag)
 
@@ -240,27 +315,15 @@ def output2DImages(iteration):
                 label = cv2.GaussianBlur(src = label, ksize = (3, 3), sigmaX = 2)
                 label = np.where(bloodMask > normalMask, 2, label)
                 # label = np.where(bloodMask > normalMask, 1, 0)
-                brainMask = cv2.resize(brainMask, (64, 256), interpolation=cv2.INTER_CUBIC)
-                label = cv2.resize(label, (64, 256), interpolation=cv2.INTER_CUBIC)
+                brainMask = cv2.resize(brainMask, (80, 256))
+                label = cv2.resize(label, (80, 256))
                 label = np.where(brainMask == 0, 0, label)
-                label = label.reshape([256, 64, 1])
-
-                # plt.figure(figsize=(10, 10))
-                # plt.xticks([])
-                # plt.yticks([])
-                # plt.grid(False)
-                # plt.imshow(label, cmap='magma')
-                # plt.show()
-
+                label = label.reshape([256, 80, 1])
                 cycles = real.shape[-1]
-                # real = real.astype('float64')
-                # imag = imag.astype('float64')
-                # bMode = bMode.astype('float64')
-                iLabel_num = np.count_nonzero(label[:, :, 0] == 2) / (256 * 64)
-                iLabel = iLabel_num > .01
-                # print(pathName)
-                # print(patient_num)
-                # print(iLabel_num)
+                real = real.astype('float64')
+                imag = imag.astype('float64')
+                bMode = bMode.astype('float64')
+                # iLabel_num = np.count_nonzero(label[:, :, 0] == 2) / (256 * 64)
                 bMode = np.mean(bMode, axis=2)
 
                 for k in range(0, cycles):
@@ -270,18 +333,36 @@ def output2DImages(iteration):
 
                     # print(bModeO.shape)
 
+                    # realO = realO - np.expand_dims(realO.mean(axis=2), axis=2)
+                    # rMax = np.expand_dims(np.abs(realO).std(axis=2), axis=2)
+                    # realO = realO / (2 * rMax)
+                    #
+                    # imagO = imagO - np.expand_dims(imagO.mean(axis=2), axis=2)
+                    # iMax = np.expand_dims(np.abs(imagO).std(axis=2), axis=2)
+                    # imagO = imagO / (2 * iMax)
+
+                    # real = real - real.mean(axis=0).mean(axis=0)
+                    # safe_max = np.abs(real).max(axis=0).max(axis=0)
+                    # safe_max[safe_max == 0] = 1
+                    # real = real / safe_max
+                    #
+                    # imag = imag - imag.mean(axis=0).mean(axis=0)
+                    # safe_max = np.abs(imag).max(axis=0).max(axis=0)
+                    # safe_max[safe_max == 0] = 1
+                    # imag = imag / safe_max
+
                     # bModeO = np.where(brainMask == 0, 0, bModeO)
-                    realO = cv2.resize(realO, (64, 256), interpolation=cv2.INTER_CUBIC)
-                    imagO = cv2.resize(imagO, (64, 256), interpolation=cv2.INTER_CUBIC)
-                    bModeO = cv2.resize(bModeO, (64, 256), interpolation=cv2.INTER_CUBIC)
-                    # tOutput = cv2.resize(tOutput, (64, 256), interpolation=cv2.INTER_CUBIC)
+                    realO = cv2.resize(realO, (80, 256))
+                    imagO = cv2.resize(imagO, (80, 256))
+                    bModeO = cv2.resize(bModeO, (80, 256))
+                    # tOutput = cv2.resize(tOutput, (80, 256), interpolation=cv2.INTER_CUBIC)
 
                     # delete non-brain from input data
                     for i in range(0, realO.shape[-1]):
-                        realO[:, :, i] = np.where(brainMask == 0, 0, realO[:, :, i])
-                        imagO[:, :, i] = np.where(brainMask == 0, 0, imagO[:, :, i])
+                        realO[:, :, i] = np.where(brainMask == 0, 0.0, realO[:, :, i])
+                        imagO[:, :, i] = np.where(brainMask == 0, 0.0, imagO[:, :, i])
 
-                    bModeO = bModeO.reshape([256, 64, 1])
+                    bModeO = bModeO.reshape([256, 80, 1])
 
                     # concatenate the columns into one structure
                     image = np.concatenate((label, realO, imagO, bModeO), axis=2)
@@ -292,63 +373,59 @@ def output2DImages(iteration):
                     if count % 10 == iteration:
                         testingData.append([image])
                         testingPaths.append([pathName])
-                        testingLabels.append([iLabel])
-                        testingCycles.append([cycles])
-                    elif (count % 10 == iteration + 1 or count % 10 == iteration - 9) or (count % 10 == iteration + 2 or count % 10 == iteration - 8):
-                        validationData.append([image])
-                        validationPaths.append([pathName])
-                        validationLabels.append([iLabel])
-                        validationCycles.append([cycles])
-                        for y in range(0, math.floor(iLabel_num / .03)):
-                            pathNameB = pathName + "_{}".format(y)
-                            # print(pathNameB)
-                            validationData.append([image])
-                            validationPaths.append([pathNameB])
-                            validationLabels.append([iLabel])
-                            validationCycles.append([cycles])
-                        if patient_num in IPH_patients:
-                            for x in range(0, 3):
-                                lock.release()
-                                image = imageReduc(image)
-                                pathName_iph = pathName + "iph_{}".format(x)
-                                # print(pathName_iph)
-                                lock.acquire()
-                                validationData.append([image])
-                                validationPaths.append([pathName_iph])
-                                validationLabels.append([iLabel])
-                                validationCycles.append([cycles])
-                        for z in range(0, 2):
-                            lock.release()
-                            image = dataAug(image)
-                            pathName_aug = pathName + "aug_{}".format(z)
-                            lock.acquire()
-                            validationData.append([image])
-                            validationPaths.append([pathName_aug])
-                            validationLabels.append([iLabel])
-                            validationCycles.append([cycles])
+                    # elif (count % 10 == iteration + 1 or count % 10 == iteration - 9) or (count % 10 == iteration + 2 or count % 10 == iteration - 8):
+                    #     validationData.append([image])
+                    #     validationPaths.append([pathName])
+                    #     if patient_num in IPH_patients:
+                    #         imageA = image
+                    #         for x in range(0, 2):
+                    #             lock.release()
+                    #             imageA[:, :, :-1] = imageReduc(imageA[:, :, :-1])
+                    #             pathName_iph = pathName + "iph_{}".format(x)
+                    #             # print(pathName_iph)
+                    #             lock.acquire()
+                    #             validationData.append([imageA])
+                    #             validationPaths.append([pathName_iph])
+                        # if iLabel_num > 0.03:
+                        #     imageA = image
+                        #     for y in range(0, math.floor(iLabel_num / .03)):
+                        #         lock.release()
+                        #         imageA = dataAug(imageA)
+                        #         lock.acquire()
+                        #         pathNameB = pathName + "_{}".format(y)
+                        #         # print(pathNameB)
+                        #         validationData.append([imageA])
+                        #         validationPaths.append([pathNameB])
+                        # for z in range(0, 2):
+                        #     lock.release()
+                        #     image = dataAug(image)
+                        #     pathName_aug = pathName + "aug_{}".format(z)
+                        #     lock.acquire()
+                        #     validationData.append([image])
+                        #     validationPaths.append([pathName_aug])
                     else:
                         trainingData.append([image])
                         trainingPaths.append([pathName])
-                        trainingLabels.append([iLabel])
-                        trainingCycles.append([cycles])
-                        for y in range(0, math.floor(iLabel_num / .03)):
-                            pathNameB = pathName + "_{}".format(y)
-                            # print(pathNameB)
-                            trainingData.append([image])
-                            trainingPaths.append([pathNameB])
-                            trainingLabels.append([iLabel])
-                            trainingCycles.append([cycles])
-                        if patient_num in IPH_patients:
-                            for x in range(0, 3):
-                                lock.release()
-                                image = imageReduc(image)
-                                pathName_iph = pathName + "iph_{}".format(x)
-                                # print(pathName_iph)
-                                lock.acquire()
-                                trainingData.append([image])
-                                trainingPaths.append([pathName_iph])
-                                trainingLabels.append([iLabel])
-                                trainingCycles.append([cycles])
+                        # if patient_num in IPH_patients:
+                        #     imageA = image
+                        #     for x in range(0, 2):
+                        #         lock.release()
+                        #         imageA[:, :, :-1] = imageReduc(imageA[:, :, :-1])
+                        #         pathName_iph = pathName + "iph_{}".format(x)
+                        #         # print(pathName_iph)
+                        #         lock.acquire()
+                        #         trainingData.append([imageA])
+                        #         trainingPaths.append([pathName_iph])
+                        # if iLabel_num > 0.05:
+                        #     imageA = image
+                        #     for y in range(0, math.floor(iLabel_num / .03)):
+                        #         lock.release()
+                        #         imageA = dataAug(imageA)
+                        #         lock.acquire()
+                        #         pathNameB = pathName + "_{}".format(y)
+                        #         # print(pathNameB)
+                        #         trainingData.append([imageA])
+                        #         trainingPaths.append([pathNameB])
                         for z in range(0, 2):
                             lock.release()
                             image = dataAug(image)
@@ -356,8 +433,6 @@ def output2DImages(iteration):
                             lock.acquire()
                             trainingData.append([image])
                             trainingPaths.append([pathName_aug])
-                            trainingLabels.append([iLabel])
-                            trainingCycles.append([cycles])
                     lock.release()
                 # for testing purposes only
         timeEnd[count] = time.time()
@@ -374,70 +449,57 @@ def output2DImages(iteration):
     pathlist = os.listdir(dataPaths)
     pathlist = np.sort(pathlist)
     pathlist = shuffle(pathlist, random_state=20)
-    t = 0
-    pLength = pathlist.length
-    while True:
-        for _ in range(0, 20):
-            if t == pLength:
-                break
-            fpath = os.path.join(dataPaths, pathlist[t])
-            patient_num = fpath[-3:]
-            patient_num = int(patient_num)
-            timeStart[count] = time.time()
-            if patient_num not in bad_patients:
-                p = multiprocessing.Process(target=fileLoop, args=(fpath, patient_num, iteration, 1))
-                p.start()
-                processes.append(p)
-            count += 1
-            t += 1
-        for process in processes:
-            # print("in process loop - {}".format(trainingData))
-            process.join()
-        if t == pLength:
-            break
+    # t = 0
+    # pLength = pathlist.length
+    # while True:
+    #     for _ in range(0, 20):
+    #         if t == pLength:
+    #             break
+
+    for path in pathlist:
+        fpath = os.path.join(dataPaths, path)
+        patient_num = fpath[-3:]
+        patient_num = int(patient_num)
+        timeStart[count] = time.time()
+        if patient_num not in bad_patients:
+            p = multiprocessing.Process(target=fileLoop, args=(fpath, patient_num, iteration, 1))
+            p.start()
+            processes.append(p)
+            # fileLoop(fpath, patient_num, iteration, 0)
+        count += 1
+        # t += 1
+    for process in processes:
+        process.join()
+        # if t == pLength:
+        #     break
 
     # convert to numpy arrays, because the data is 4D
     trainingData = np.array(trainingData)
     testingData = np.array(testingData)
-    validationData = np.array(validationData)
+    # validationData = np.array(validationData)
     trainingPaths = np.array(trainingPaths)
     testingPaths = np.array(testingPaths)
-    validationPaths = np.array(validationPaths)
-    trainingLabels = np.array(trainingLabels)
-    testingLabels = np.array(testingLabels)
-    validationLabels = np.array(validationLabels)
-    trainingCycles = np.array(trainingCycles)
-    testingCycles = np.array(testingCycles)
-    validationCycles = np.array(validationCycles)
+    # validationPaths = np.array(validationPaths)
 
     # let us see what we got
     # print(testingPaths)
     print("training {}".format(trainingData.shape))
     print("testing {}".format(testingData.shape))
-    print("validation {}".format(validationData.shape))
-    print("Cycle count train {}".format(trainingCycles.shape))
-    print("Cycle count test {}".format(testingCycles.shape))
-    print("Cycle count validation {}".format(validationCycles.shape))
-    print("Positive # label {}".format(np.count_nonzero(trainingLabels)))
+    # print("validation {}".format(validationData.shape))
 
     savePath = "/DATA/TBI/Datasets/NPFiles/DispBal/"
     print("saved in : {}".format(savePath))
     np.save(savePath + "TrainingData.npy", trainingData)
     np.save(savePath + "TestingData.npy", testingData)
-    np.save(savePath + "ValidationData.npy", validationData)
+    # np.save(savePath + "ValidationData.npy", validationData)
     np.save(savePath + "TrainingPaths.npy", trainingPaths)
     np.save(savePath + "TestingPaths.npy", testingPaths)
-    np.save(savePath + "ValidationPaths.npy", validationPaths)
-    np.save(savePath + "TrainingLabels.npy", trainingLabels)
-    np.save(savePath + "TestingLabels.npy", testingLabels)
-    np.save(savePath + "ValidationLabels.npy", validationLabels)
-    np.save(savePath + "TrainingCycles.npy", trainingCycles)
-    np.save(savePath + "TestingCycles.npy", testingCycles)
-    np.save(savePath + "ValidationCycles.npy", validationCycles)
+    # np.save(savePath + "ValidationPaths.npy", validationPaths)
 
 
 if __name__ == '__main__':
-    output2DImages(3)
+    output2DImages(0)
+    # FetchPolarAxis('/DATA/TBI/Datasets/PolarData/DoD001/DoD001_Ter001_RC1_Harmonics_Polar.mat')
 
-# FetchPolarAxis('/data/TBI/Datasets/PolarData/DoD001/DoD001_Ter001_RC1_Harmonics_Polar.mat')
+
 # FetchTimeData('/data/TBI/Datasets/PolarData/DoD001/DoD001_Ter001_RC1_Harmonics_Polar.mat')
