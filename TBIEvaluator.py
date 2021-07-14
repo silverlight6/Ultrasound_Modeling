@@ -1,24 +1,27 @@
 import numpy as np
 import tensorflow as tf
+import matplotlib
 from matplotlib import pyplot as plt
 # from sklearn.metrics import confusion_matrix
 import datetime
 import os
 import multiprocessing
 
-patientNum = "024"
-scanNum = "006"
-scanType = "Z"
-savePath = "/DATA/TBI/Datasets/Pictures/Evaluator/"
+patientNum = "099"
+scanNum = "007"
+scanType = "RO3"
+savePath = "/home/silver/TBI/Pictures/"
 image_num = 0
 countx = 0
 county = 0
-xAxisPath = '/DATA/TBI/Datasets/NPFiles/xAxis.npy'
-yAxisPath = '/DATA/TBI/Datasets/NPFiles/yAxis.npy'
+xAxisPath = '/home/silver/TBI/NPFiles/xAxis.npy'
+yAxisPath = '/home/silver/TBI/NPFiles/yAxis.npy'
 xAxis = np.load(xAxisPath)
 yAxis = np.load(yAxisPath)
 xAxis = xAxis.astype(int)
 yAxis = yAxis.astype(int)
+matplotlib.use('Agg')
+
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
@@ -70,7 +73,6 @@ def preProcess(input_data, xdim=160, ydim=192):
 
 def preProcess1(input_data, xdim=160, ydim=192):
     tt_y = input_data[image_num, :, :, :, 0]
-    # print(tt_y.shape)
     bMode = input_data[image_num, :, :, :, 11]
     tt_x = input_data[image_num, :, :, :, 1:11]
     tt_x = np.array(tt_x)
@@ -128,8 +130,8 @@ def my_loss_cat(y_true, y_pred):
 def Cardiac_Model():
     global image_num
     global lock
-    dataPath_m = '/DATA/TBI/Datasets/NPFiles/DispBal/TestingData2.npy'
-    pathNames_path = '/DATA/TBI/Datasets/NPFiles/DispBal/TestingPaths2.npy'
+    dataPath_m = '/home/silver/TBI/NPFiles/Disp/TestingData2.npy'
+    pathNames_path = '/home/silver/TBI/NPFiles/Disp/TestingPaths2.npy'
     data_m = np.load(dataPath_m)
     pathNames = np.load(pathNames_path)
     processes = []
@@ -138,7 +140,7 @@ def Cardiac_Model():
     tmpcnt = 0
     lock = multiprocessing.Lock()
     while image_num < pathLen:
-        while image_num < tmpcnt + 20 and image_num < pathLen:
+        while image_num < tmpcnt + 16 and image_num < pathLen:
             if image_num >= pathLen:
                 break
             lock.acquire()
@@ -150,17 +152,16 @@ def Cardiac_Model():
             print("Process Create")
             image_num += 1
         for process in processes:
-            # print("Process Finished")
             process.join()
-        tmpcnt = tmpcnt + 20
+        tmpcnt = tmpcnt + 16
         print(tmpcnt)
     print(tmpcnt)
 
 
 def Polar_Model(sAll=False):
     global image_num
-    dataPath_m = '/DATA/TBI/Datasets/NPFiles/DispBal/TestingData.npy'
-    pathNames_path = '/DATA/TBI/Datasets/NPFiles/DispBal/TestingPaths.npy'
+    dataPath_m = '/home/silver/TBI/NPFiles/Disp/TestingData.npy'
+    pathNames_path = '/home/silver/TBI/NPFiles/Disp/TestingPaths.npy'
     data_m = np.load(dataPath_m)
     pathNames = np.load(pathNames_path)
     if not sAll:
@@ -170,10 +171,10 @@ def Polar_Model(sAll=False):
         [testX, testY, bMode] = preProcess1(data_m, xdim=256, ydim=80)
         PolarProcess(testX, testY, name=pathNames[index], bMode=bMode)
     else:
-        processes = []
         pathLen = len(pathNames)
         tmpcnt = 0
         while tmpcnt < pathLen:
+            processes = []
             for i in range(tmpcnt, tmpcnt + 16):
                 if i >= pathLen:
                     break
@@ -184,7 +185,6 @@ def Polar_Model(sAll=False):
                 processes.append(p)
                 print("Process Create")
             for process in processes:
-                # print("Process Finished")
                 process.join()
             tmpcnt = tmpcnt + 16
             print(tmpcnt)
@@ -198,9 +198,9 @@ def Polar_Model(sAll=False):
 def PolarProcess(testX, testY, name, bMode=None, paths=None):
 
     # DispInput(testX)
-    SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/ResNeSt_T1",
+    SegNet = tf.keras.models.load_model("/home/silver/TBI/Models/ResNeSt_T1",
                                         custom_objects={'my_loss_cat': my_loss_cat})
-    # SegNet = tf.keras.models.load_model("/DATA/TBI/Datasets/Models/Transformer_1")
+    # SegNet = tf.keras.models.load_model("/TBI/Models/Transformer_1")
     # prob = SegNet({"imp0": tf.expand_dims(testX[0, :, :, :], 0), "imp1": tf.expand_dims(testX[1, :, :, :], 0),
     #                "imp2": tf.expand_dims(testX[2, :, :, :], 0), "imp3": tf.expand_dims(testX[3, :, :, :], 0),
     #                "imp4": tf.expand_dims(testX[4, :, :, :], 0), "imp5": tf.expand_dims(testX[5, :, :, :], 0),
@@ -305,7 +305,6 @@ def Display(prob=None, true=None, mask=None, confusion=None, name="True", numDim
 
     if dispDict["bMode"]:
         _, bin_edges = np.histogram(bMode, bins=25)
-        # print(bin_edges)
         ax[county, countx].grid(False)
         ax[county, countx].pcolormesh(xAxis, yAxis, bMode, shading='flat', cmap='binary', vmin=bin_edges[2], vmax=bin_edges[-2])
         ax[county, countx].invert_yaxis()
@@ -337,6 +336,7 @@ def checkCount(name="name"):
                 os.mkdir(savePath + datetime.datetime.now().strftime("%m%d-%H"))
             plt.savefig(path)
             # plt.show()
+            plt.close()
             county = 0
         countx = 0
 

@@ -7,12 +7,13 @@ import multiprocessing
 import random
 import scipy.ndimage as ndimage     # rotate, zoom
 import time
+import matplotlib
 from sklearn.utils import shuffle   # shuffle seed
-
-
 
 from matplotlib import pyplot as plt
 from scipy.io import loadmat
+
+matplotlib.use('Agg')
 
 
 def FetchTimeData(datapath):
@@ -93,8 +94,7 @@ def FetchPolarAxis(datapath):
     xaxis += 100
     yaxis -= 4
 
-    home = os.path.expanduser("~")
-    savePath = "/DATA/TBI/Datasets/NPFiles/"
+    savePath = "/home/silver/TBI/NPFiles/"
     print("saved in : {}".format(savePath))
     np.save(savePath + "xAxis.npy", xaxis)
     np.save(savePath + "yAxis.npy", yaxis)
@@ -281,7 +281,7 @@ def output2DImages(iteration):
                 brainMask = np.array(list(Harmonics['brainMask']))
                 bMode = np.array(list(Harmonics['bModeNorm']))
 
-                if mode==0:
+                if mode == 0:
                     harmonic = np.array(list(Harmonics['harmonics']))
                     # separate real and imaginary.
                     real = harmonic.real
@@ -310,9 +310,9 @@ def output2DImages(iteration):
                 # Smooth & Create the Label
                 label = np.where(bloodMask > normalMask, 2, 1)
                 label = label.astype('float32')
-                label = cv2.GaussianBlur(src = label, ksize = (9, 9), sigmaX = 4)
+                label = cv2.GaussianBlur(src=label, ksize=(9, 9), sigmaX=4)
                 label = np.where(bloodMask > normalMask, 2, label)
-                label = cv2.GaussianBlur(src = label, ksize = (3, 3), sigmaX = 2)
+                label = cv2.GaussianBlur(src=label, ksize=(3, 3), sigmaX=2)
                 label = np.where(bloodMask > normalMask, 2, label)
                 # label = np.where(bloodMask > normalMask, 1, 0)
                 brainMask = cv2.resize(brainMask, (80, 256))
@@ -334,22 +334,22 @@ def output2DImages(iteration):
                     # print(bModeO.shape)
 
                     # realO = realO - np.expand_dims(realO.mean(axis=2), axis=2)
-                    # rMax = np.expand_dims(np.abs(realO).std(axis=2), axis=2)
+                    # rMax = np.expand_dims(np.abs(realO).max(axis=2), axis=2)
                     # realO = realO / (2 * rMax)
                     #
                     # imagO = imagO - np.expand_dims(imagO.mean(axis=2), axis=2)
-                    # iMax = np.expand_dims(np.abs(imagO).std(axis=2), axis=2)
+                    # iMax = np.expand_dims(np.abs(imagO).max(axis=2), axis=2)
                     # imagO = imagO / (2 * iMax)
 
-                    # real = real - real.mean(axis=0).mean(axis=0)
-                    # safe_max = np.abs(real).max(axis=0).max(axis=0)
-                    # safe_max[safe_max == 0] = 1
-                    # real = real / safe_max
-                    #
-                    # imag = imag - imag.mean(axis=0).mean(axis=0)
-                    # safe_max = np.abs(imag).max(axis=0).max(axis=0)
-                    # safe_max[safe_max == 0] = 1
-                    # imag = imag / safe_max
+                    realO = realO - realO.mean(axis=0).mean(axis=0)
+                    safe_max = np.abs(realO).max(axis=0).max(axis=0)
+                    safe_max[safe_max == 0] = 1
+                    realO = realO / safe_max
+
+                    imagO = imagO - imagO.mean(axis=0).mean(axis=0)
+                    safe_max = np.abs(imagO).max(axis=0).max(axis=0)
+                    safe_max[safe_max == 0] = 1
+                    imagO = imagO / safe_max
 
                     # bModeO = np.where(brainMask == 0, 0, bModeO)
                     realO = cv2.resize(realO, (80, 256))
@@ -366,7 +366,6 @@ def output2DImages(iteration):
 
                     # concatenate the columns into one structure
                     image = np.concatenate((label, realO, imagO, bModeO), axis=2)
-                    # print("appendData.shape = {}".format(appendData.shape))
 
                     lock = multiprocessing.Lock()
                     lock.acquire()
@@ -426,13 +425,13 @@ def output2DImages(iteration):
                         #         # print(pathNameB)
                         #         trainingData.append([imageA])
                         #         trainingPaths.append([pathNameB])
-                        for z in range(0, 2):
-                            lock.release()
-                            image = dataAug(image)
-                            pathName_aug = pathName + "aug_{}".format(z)
-                            lock.acquire()
-                            trainingData.append([image])
-                            trainingPaths.append([pathName_aug])
+                        # for z in range(0, 2):
+                        #     lock.release()
+                        #     image = dataAug(image)
+                        #     pathName_aug = pathName + "aug_{}".format(z)
+                        #     lock.acquire()
+                        #     trainingData.append([image])
+                        #     trainingPaths.append([pathName_aug])
                     lock.release()
                 # for testing purposes only
         timeEnd[count] = time.time()
@@ -442,36 +441,34 @@ def output2DImages(iteration):
 
     # data paths; it is just what it sounds like
     # watch out for polar versus non-polar
-    dataPaths = '/DATA/TBI/Datasets/CardiacData/'
+    dataPaths = "/home/silver/TBI/CardiacData/"
 
     # make sure that data gets looked at even
-    processes = []
+
     pathlist = os.listdir(dataPaths)
     pathlist = np.sort(pathlist)
     pathlist = shuffle(pathlist, random_state=20)
-    # t = 0
-    # pLength = pathlist.length
-    # while True:
-    #     for _ in range(0, 20):
-    #         if t == pLength:
-    #             break
+    t = 0
+    pLength = len(pathlist)
 
-    for path in pathlist:
-        fpath = os.path.join(dataPaths, path)
-        patient_num = fpath[-3:]
-        patient_num = int(patient_num)
-        timeStart[count] = time.time()
-        if patient_num not in bad_patients:
-            p = multiprocessing.Process(target=fileLoop, args=(fpath, patient_num, iteration, 1))
-            p.start()
-            processes.append(p)
-            # fileLoop(fpath, patient_num, iteration, 0)
-        count += 1
-        # t += 1
-    for process in processes:
-        process.join()
-        # if t == pLength:
-        #     break
+    while count < pLength:
+        processes = []
+        while t < 10 and count < pLength:
+            fpath = os.path.join(dataPaths, pathlist[count])
+            patient_num = fpath[-3:]
+            patient_num = int(patient_num)
+            timeStart[count] = time.time()
+            if patient_num not in bad_patients:
+                p = multiprocessing.Process(target=fileLoop, args=(fpath, patient_num, iteration, 1))
+                p.start()
+                processes.append(p)
+            count += 1
+            t += 1
+        t = 0
+        for process in processes:
+            process.join()
+            # if t == pLength:
+            #     break
 
     # convert to numpy arrays, because the data is 4D
     trainingData = np.array(trainingData)
@@ -487,7 +484,7 @@ def output2DImages(iteration):
     print("testing {}".format(testingData.shape))
     # print("validation {}".format(validationData.shape))
 
-    savePath = "/DATA/TBI/Datasets/NPFiles/DispBal/"
+    savePath = "/home/silver/TBI/NPFiles/Disp/"
     print("saved in : {}".format(savePath))
     np.save(savePath + "TrainingData.npy", trainingData)
     np.save(savePath + "TestingData.npy", testingData)
@@ -498,8 +495,8 @@ def output2DImages(iteration):
 
 
 if __name__ == '__main__':
-    output2DImages(0)
-    # FetchPolarAxis('/DATA/TBI/Datasets/PolarData/DoD001/DoD001_Ter001_RC1_Harmonics_Polar.mat')
+    output2DImages(1)
+    # FetchPolarAxis('/home/silver/TBI/CardiacData/DoD001/DoD001_Ter001_RC1_Displacement_Normalized_2.mat')
 
 
 # FetchTimeData('/data/TBI/Datasets/PolarData/DoD001/DoD001_Ter001_RC1_Harmonics_Polar.mat')
