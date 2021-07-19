@@ -170,7 +170,7 @@ assert batch_size >= num_examples_to_generate
 for test_batch in test_dataset.take(1):
   test_sample = test_batch[0:num_examples_to_generate, :, :, :]
 
-generate_and_save_images(model, 0, test_sample)
+# generate_and_save_images(model, 0, test_sample)
 
 for epoch in range(1, epochs + 1):
   start_time = time.time()

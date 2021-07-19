@@ -8,9 +8,10 @@ import datetime
 import tensorflow as tf
 import numpy as np
 
-wDecay= tf.keras.regularizers.L2(l2=1e-5)
+wDecay = tf.keras.regularizers.L2(l2=1e-5)
 # wDecay = None
 tf.executing_eagerly()
+
 
 class Attention(tf.Module):
     def __init__(self, num_heads=8, attention_head_size=1280, attention_dropout_rate=0.0):
@@ -28,7 +29,6 @@ class Attention(tf.Module):
         self.proj_dropout = tf.keras.layers.Dropout(attention_dropout_rate)
 
         self.softmax = tf.keras.layers.Softmax(axis=3)
-
 
     def split_heads(self, x, batch_size):
         """Split the last dimension into (num_heads, depth).
@@ -154,9 +154,8 @@ class Encoder(tf.Module):
         self.encoder_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
         self.Transformer_layers = []
         for _ in range(num_layers):
-            Transformer_layers = Block()
-            self.Transformer_layers.append(Transformer_layers)
-
+            transformer_layers = Block()
+            self.Transformer_layers.append(transformer_layers)
 
     def forward(self, hidden_states):
         # attn_weights = []
@@ -179,15 +178,15 @@ class Transformer(tf.Module):
         self.encoder = Encoder(img_size[0], img_size[1])
         self.num_classes = 3
         self.head = tf.keras.layers.Conv2D(self.num_classes, kernel_size=3, padding='SAME', activation='softmax',
-                                                kernel_initializer=tf.initializers.RandomNormal(),
-                                                kernel_regularizer=wDecay)
+                                           kernel_initializer=tf.initializers.RandomNormal(),
+                                           kernel_regularizer=wDecay)
         self.softmax = tf.keras.layers.Softmax()
 
     def forward(self, input_ids):
         embedding_output = self.embeddings(input_ids)
         encoded = self.encoder(embedding_output)  # (B, n_patch, hidden)
-        tfShape = tf.shape(encoded)
-        x = tf.reshape(tensor=encoded, shape=[tfShape[0], 256, 80, -1])
+        tfshape = tf.shape(encoded)
+        x = tf.reshape(tensor=encoded, shape=[tfshape[0], 256, 80, -1])
         x = self.head(x)
         return x
 
@@ -213,7 +212,6 @@ class VisionTransformer(tf.Module):
         self.class_factor = [0.06329, 0.027567, 0.90914]
         self.global_step = tf.Variable(0, trainable=False, name='global_step')
 
-
     def forward(self, x):
         logits = self.transformer(x)  # (B, n_patch, hidden)
         # print(logits)
@@ -233,7 +231,7 @@ class VisionTransformer(tf.Module):
             # tape.watch(self.visionModel.trainable_variables)
             logits = self.forward(x)
             smce = self.loss(y_true=y, y_pred=logits)
-            smce  += sum(self.visionModel.losses)
+            smce += sum(self.visionModel.losses)
         if train:
             gradients = tape.gradient(smce, self.visionModel.trainable_variables)
             clip_gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
@@ -528,8 +526,8 @@ def test(neuralnet, dataset, epoch):
 
 def main():
     # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-    train_data = '/DATA/TBI/Datasets/NPFiles/DispBal/TrainingData.npy'
-    val_data = '/DATA/TBI/Datasets/NPFiles/DispBal/TestingData.npy'
+    train_data = '/TBI/NPFiles/DispBal/TrainingData.npy'
+    val_data = '/TBI/NPFiles/DispBal/TestingData.npy'
     dataset = Dataset(train_data, val_data)
     # config = tf.estimator.RunConfig(train_distribute=mirrored_strategy)
     batch_size=8
@@ -539,7 +537,7 @@ def main():
     # print(neuralnet.visionModel.summary())
     # print(len(neuralnet.visionModel.layers))
     training(neuralnet=neuralnet, dataset=dataset, epochs=51, batch_size=batch_size)
-    neuralnet.visionModel.save('/DATA/TBI/Datasets/Models/Transformer_1')
+    neuralnet.visionModel.save('/TBI/Models/Transformer_1')
 
 
 if __name__ == '__main__':

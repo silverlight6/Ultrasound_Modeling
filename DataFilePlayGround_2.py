@@ -170,7 +170,7 @@ def imageReduc(image):
     output[:, :, 0] = np.where(mask == 1, 0, output[:, :, 0])
     for k in range(1, si[2]):
         output[:, :, k] = np.where(output[:, :, 0] == 0, 0, output[:, :, k])
-
+    print(output.shape)
     return output
 
 
@@ -257,8 +257,9 @@ def output2DImages(iteration):
     testingPaths = manager.list()
     # validationPaths = manager.list()
 
-    IPH_patients = [8, 9, 10, 47, 53, 62, 66, 67, 69, 74, 75, 78, 85, 89, 101, 105, 107, 110, 120, 121, 126, 129, 130]
-    bad_patients = [1, 14, 22, 23, 27, 28, 32, 34, 35, 36, 37, 38, 39, 44, 49, 69, 71, 78, 82, 90, 98, 101, 928]
+    IPH_patients = [8, 9, 10, 12, 24, 47, 53, 62, 66, 67, 69, 74, 75, 78, 85, 89, 93,
+                    101, 105, 107, 110, 112, 113, 120, 121, 126, 129, 130, 133]
+    bad_patients = [1, 14, 22, 23, 27, 28, 32, 34, 35, 36, 37, 38, 39, 44, 49, 69, 71, 78, 82, 90, 98, 101, 129, 928]
     timeStart = np.zeros([100])
     timeEnd = np.zeros([100])
     # counting files
@@ -372,39 +373,12 @@ def output2DImages(iteration):
                     if count % 10 == iteration:
                         testingData.append([image])
                         testingPaths.append([pathName])
-                    # elif (count % 10 == iteration + 1 or count % 10 == iteration - 9) or (count % 10 == iteration + 2 or count % 10 == iteration - 8):
-                    #     validationData.append([image])
-                    #     validationPaths.append([pathName])
-                    #     if patient_num in IPH_patients:
-                    #         imageA = image
-                    #         for x in range(0, 2):
-                    #             lock.release()
-                    #             imageA[:, :, :-1] = imageReduc(imageA[:, :, :-1])
-                    #             pathName_iph = pathName + "iph_{}".format(x)
-                    #             # print(pathName_iph)
-                    #             lock.acquire()
-                    #             validationData.append([imageA])
-                    #             validationPaths.append([pathName_iph])
-                        # if iLabel_num > 0.03:
-                        #     imageA = image
-                        #     for y in range(0, math.floor(iLabel_num / .03)):
-                        #         lock.release()
-                        #         imageA = dataAug(imageA)
-                        #         lock.acquire()
-                        #         pathNameB = pathName + "_{}".format(y)
-                        #         # print(pathNameB)
-                        #         validationData.append([imageA])
-                        #         validationPaths.append([pathNameB])
-                        # for z in range(0, 2):
-                        #     lock.release()
-                        #     image = dataAug(image)
-                        #     pathName_aug = pathName + "aug_{}".format(z)
-                        #     lock.acquire()
-                        #     validationData.append([image])
-                        #     validationPaths.append([pathName_aug])
                     else:
                         trainingData.append([image])
                         trainingPaths.append([pathName])
+
+                        # # I want to add this block in but my server does not have the RAM required to run it.
+                        # # There may be another issue at play but that is my first guess.
                         # if patient_num in IPH_patients:
                         #     imageA = image
                         #     for x in range(0, 2):
@@ -415,6 +389,7 @@ def output2DImages(iteration):
                         #         lock.acquire()
                         #         trainingData.append([imageA])
                         #         trainingPaths.append([pathName_iph])
+
                         # if iLabel_num > 0.05:
                         #     imageA = image
                         #     for y in range(0, math.floor(iLabel_num / .03)):
@@ -495,7 +470,7 @@ def output2DImages(iteration):
 
 
 if __name__ == '__main__':
-    output2DImages(1)
+    output2DImages(0)
     # FetchPolarAxis('/home/silver/TBI/CardiacData/DoD001/DoD001_Ter001_RC1_Displacement_Normalized_2.mat')
 
 

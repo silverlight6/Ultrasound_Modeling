@@ -2,21 +2,21 @@
 # # There will be A LOT of changes to it but the general structure is very similar
 # # Biggest change is moving everything from pytorch to tensorflow
 # # Second biggest change is moving from using a prebuilt ResNet base to a untrained and hand coded ResNeSt base.
-# # The third change is I don't do a downsampling when flattening for patches to the transformer like in the ppaer
+# # The third change is I don't do a downsampling when flattening for patches to the transformer like in the paper
 
 import datetime
 import tensorflow as tf
 # import tensorflow_addons as tfa
 import numpy as np
-import scipy.ndimage as ndimage     # rotate, zoom
+# import scipy.ndimage as ndimage     # rotate, zoom
 import random
+import os
 
-
-# mirrored_strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
-
-wDecay = tf.keras.regularizers.L2(l2=0.00001)
-# wDecay = None
+# mirrored_strategy = tf.distribute.MultiWorkerMirroredStrategy()
+# wDecay = tf.keras.regularizers.L2(l2=0.0001)
+wDecay = None
 # tf.executing_eagerly()
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 
 class Attention(tf.Module):
@@ -364,8 +364,8 @@ class ResNest(tf.Module):
         self.conv4_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2)
         self.conv_1 = residual_S(ksize=self.ksize, outchannel=64, radix=self.radix, kpaths=self.kpaths)
         self.conv_2 = residual_S(ksize=self.ksize, outchannel=128, radix=self.radix, kpaths=self.kpaths)
-        self.conv_3 = residual_S(ksize=self.ksize, outchannel=128, radix=self.radix, kpaths=self.kpaths)
-        self.conv_4 = residual_S(ksize=self.ksize, outchannel=128, radix=self.radix, kpaths=self.kpaths)
+        self.conv_3 = residual_S(ksize=self.ksize, outchannel=256, radix=self.radix, kpaths=self.kpaths)
+        self.conv_4 = residual_S(ksize=self.ksize, outchannel=256, radix=self.radix, kpaths=self.kpaths)
         # block_channels = [64, 128, 256]
         # self.concats_1 = None
         # self.initialize = self.forward(np.zeros([1, 256, 80, 10]))
@@ -429,11 +429,11 @@ class residual_S(tf.Module):
     def forward(self, x):
         concats_1 = None
         for layer_block in self.cardinal_blocks:
-            cardinal = layer_block(x)
+            cardinalI = layer_block(x)
             if concats_1 is None:
-                concats_1 = cardinal
+                concats_1 = cardinalI
             else:
-                concats_1 = tf.concat([concats_1, cardinal], axis=3)
+                concats_1 = tf.concat([concats_1, cardinalI], axis=3)
 
         concats_2 = self.concats_2(concats_1)
         x = self.convtmp_sc(x)
@@ -459,14 +459,16 @@ class cardinal(tf.Module):
 
         outchannel_cv11 = int(self.outchannel / self.radix / self.kpaths)
         outchannel_cvkk = int(self.outchannel / self.kpaths)
-        self.conv1 = tf.keras.layers.Conv2D(outchannel_cv11, 1, strides=1, padding='SAME', dilation_rate=(self.atrous, self.atrous),
-                                            kernel_initializer=tf.keras.initializers.HeNormal(), kernel_regularizer=wDecay)
+        self.conv1 = tf.keras.layers.Conv2D(outchannel_cv11, 1, strides=1, padding='SAME',
+                                            dilation_rate=(self.atrous, self.atrous), kernel_regularizer=wDecay,
+                                            kernel_initializer=tf.keras.initializers.HeNormal())
         self.conv1_bn = tf.keras.layers.BatchNormalization()
         self.conv1_act = tf.keras.layers.LeakyReLU()
 
         self.conv2 = tf.keras.layers.Conv2D(outchannel_cvkk, self.ksize,
                                             strides=1, padding='SAME', dilation_rate=(self.atrous, self.atrous),
-                                            kernel_initializer=tf.keras.initializers.HeNormal(), kernel_regularizer=wDecay)
+                                            kernel_initializer=tf.keras.initializers.HeNormal(),
+                                            kernel_regularizer=wDecay)
         self.conv2_bn = tf.keras.layers.BatchNormalization()
         self.conv2_act = tf.keras.layers.LeakyReLU()
         self.split = split_attention(outchannel_cvkk, self.radix, self.atrous)
@@ -540,14 +542,13 @@ class split_attention(tf.Module):
 
 
 class VisionTransformer(tf.Module):
-    def __init__(self, img_size=(256, 80), num_classes=3, learning_rate=1e-3, weight_decay=1e-4):
+    def __init__(self, img_size=(256, 80), num_classes=3, learning_rate=1e-3, weight_decay=1e-4, batch_size=16):
         super(VisionTransformer, self).__init__()
         self.num_classes = num_classes
         self.transformer = Transformer(img_size)
         self.decoder = DecoderCup(num_classes)
-
-        self.initialize = self.forward(np.zeros([16, 256, 80, 10]))
-        self.visionModel = self.model()
+        self.input_shape = [img_size[0], img_size[1], 10]
+        self.batch_size = batch_size
         self.weight_decay = weight_decay
         # https://github.com/keras-team/keras/blob/master/keras/losses.py
         # I am today years old when I realized keras makes their loss implementations public.
@@ -558,6 +559,16 @@ class VisionTransformer(tf.Module):
         self.optimizer = tf.optimizers.Adam(learning_rate=self.learning_rate)
         self.alpha = 2
         self.class_factor = [0.06329, 0.027567, 0.90914]
+        self.initialize = self.forward(np.zeros([16, 256, 80, 10]))
+        self.visionModel = self.model()
+
+    def model(self):
+        # with mirrored_strategy.scope():
+        inputA = tf.keras.Input(shape=self.input_shape, batch_size=self.batch_size)
+        output = self.forward(inputA)
+        model = tf.keras.Model(inputs=inputA, outputs=output)
+        # model.compile(loss=self.loss, optimizer=self.optimizer)
+        return model
 
     def forward(self, x):
         x, attn_weights, features = self.transformer(x)  # (B, n_patch, hidden)
@@ -577,18 +588,12 @@ class VisionTransformer(tf.Module):
             tape.watch(self.visionModel.trainable_variables)
             logits, _ = self.forward(x)
             smce = self.loss(y_true=y, y_pred=logits)
-            smce += sum(self.visionModel.losses)
+            # smce += sum(self.visionModel.losses)
         if train:
             gradients = tape.gradient(smce, self.visionModel.trainable_variables)
             clip_gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
             self.optimizer.apply_gradients(zip(clip_gradients, self.visionModel.trainable_variables))
         return smce, logits
-
-    def model(self):
-        inputA = tf.keras.layers.Input(shape=[256, 80, 10])
-        output = self.forward(inputA)
-        model = tf.keras.Model(inputs=inputA, outputs=output)
-        return model
 
     def __call__(self, x, *args, **kwargs):
         return self.forward(x)
@@ -604,15 +609,26 @@ class VisionTransformer(tf.Module):
 
         # just a fun experiment
         # randOffSet = tf.random.normal(shape=[256, 80], mean=0, stddev=1)
-        CE = -3 * tf.reduce_sum(y_true * tf.cast(tf.math.log(y_pred), tf.float32) * self.class_factor, axis=[0,3])
+        CE = -3 * tf.reduce_sum(y_true * tf.cast(tf.math.log(y_pred), tf.float32) * self.class_factor, axis=[0, 3])
 
-        # CE = -tf.reduce_sum(y_true * tf.cast(tf.math.log(y_pred), tf.float32) * tf.pow(1.0 - y_pred, self.alpha), axis=[0, 3])
+        # CE = -tf.reduce_sum(y_true * tf.cast(tf.math.log(y_pred), tf.float32) *
+        #       tf.pow(1.0 - y_pred, self.alpha), axis=[0, 3])
         # CE = -3 * tf.reduce_sum(y_true * tf.cast(tf.math.log(y_pred), tf.float32), axis=3)
         # CE += randOffSet * 0.1
 
         # -3 if using class factor, -1 otherwise. (class factor in my implementation is divides by number of classes)
         # tf.print(CE)
         return CE
+
+
+def label2vec(label):
+    class_2 = np.where(label >= 1.05, label - 1, 0)
+    class_2 = np.where(class_2 > 1, 1, class_2)
+    class_1 = np.expand_dims(np.where(label > 0.95, 1 - class_2, 0), axis=3)
+    class_0 = np.expand_dims(np.where(label <= 0.95, 1, 0), axis=3)
+    class_2 = np.expand_dims(class_2, axis=3)
+    label = np.concatenate((class_0, class_1, class_2), axis=3)
+    return label
 
 
 class Dataset(object):
@@ -677,22 +693,13 @@ class Dataset(object):
     # The classes don't need to add up to 100. It is simply a nice thing if they do.
     # You only really need each pixel of importance to have a contribution to the loss.
 
-    def label2vec(self, label):
-        class_2 = np.where(label >= 1.05, label - 1, 0)
-        class_2 = np.where(class_2 > 1, 1, class_2)
-        class_1 = np.expand_dims(np.where(label > 0.95, 1 - class_2, 0), axis=3)
-        class_0 = np.expand_dims(np.where(label <= 0.95, 1, 0), axis=3)
-        class_2 = np.expand_dims(class_2, axis=3)
-        label = np.concatenate((class_0, class_1, class_2), axis=3)
-        return label
-
     def reset_idx(self): self.idx_tr, self.idx_te = 0, 0
 
     # Get the next batch of training data
     def next_train(self, batch_size=1, fix=False):
 
         start, end = self.idx_tr, self.idx_tr+batch_size
-        x_tr, y_tr = self.x_tr[start:end], self.y_tr[start:end]
+        x_tr, y_tr = np.copy(self.x_tr[start:end]), np.copy(self.y_tr[start:end])
 
         terminator = False
         if end >= self.num_tr:
@@ -706,14 +713,14 @@ class Dataset(object):
             self.idx_tr = start
 
         if x_tr.shape[0] != batch_size:
-            x_tr, y_tr = self.x_tr[-1-batch_size:-1], self.y_tr[-1-batch_size:-1]
+            x_tr, y_tr = np.copy(self.x_tr[-1-batch_size:-1]), np.copy(self.y_tr[-1-batch_size:-1])
 
         # data aug goes here.
         trShape = x_tr.shape
         for i in range(0, trShape[0]):
             x_tr[i, :, :, :], y_tr[i, :, :] = dataAug(x_tr[i, :, :, :], y_tr[i, :, :])
 
-        y_tr = self.label2vec(y_tr)
+        y_tr = label2vec(y_tr)
         y_tr = tf.convert_to_tensor(y_tr, dtype=tf.float32)
         return x_tr, y_tr, terminator
 
@@ -733,7 +740,7 @@ class Dataset(object):
         if x_te.shape[0] != batch_size:
             x_te, y_te = self.x_te[-1-batch_size:-1], self.y_te[-1-batch_size:-1]
 
-        y_te = self.label2vec(y_te)
+        y_te = label2vec(y_te)
         y_te = tf.convert_to_tensor(y_te, dtype=tf.float32)
         return x_te, y_te, terminator
 
@@ -834,8 +841,8 @@ def dataAug(image, label):
         image = np.fliplr(image)
         label = np.fliplr(label)
 
-    if t % 2:
-        label, image = imageReduc(np.concatenate([np.expand_dims(label, axis=-1), image], axis=2), r % 5 + 1)
+    if r % 5 != 0:
+        label, image = imageReduc(np.concatenate([np.expand_dims(label, axis=-1), image], axis=2), r % 5)
 
     # # Contrast
     # if t % 3:
@@ -852,17 +859,17 @@ def dataAug(image, label):
     if r % 3:
         label, image = clip(image, label)
 
-    # # Rotate is not realistic for our application plus it tends to look poor.
-    # if r % 13:
+    # Rotate is not realistic for our application plus it tends to look poor.
+    # if r % 7:
     #     image = ndimage.rotate(image, (r % 11) / 5, reshape=False)
     #     image = np.array(image)
     #     label = ndimage.rotate(label, (r % 11) / 5, reshape=False)
     #     label = np.array(label)
 
-    if t % 3:
+    if t % 2:
         label, image = shift(image, label)
 
-    if t % 5:
+    if t % 3:
         image = noisy(image)
     return image, label
 
@@ -870,14 +877,12 @@ def dataAug(image, label):
 def training(neuralnet, dataset, epochs, batch_size):
     print("\nTraining to %d epochs (%d of minibatch size)" % (epochs, batch_size))
 
+    global wDecay
     iteration = 0
     prev_loss = 0
     # tf.keras.utils.plot_model(neuralnet.resModel, to_file='ResNeSt.png', show_shapes=True)
 
     for epoch in range(epochs):
-        # only useful if using a diminishing learning rate
-        if neuralnet.learning_rate < 1e-5:
-            break
         while True:
             # Get the data for the next batch
             x_tr, y_tr, terminator = dataset.next_train(batch_size)  # y_tr does not used in this prj.
@@ -886,9 +891,19 @@ def training(neuralnet, dataset, epochs, batch_size):
             # Loss is 256x80 so reduce to 1 number
             loss = tf.reduce_sum(loss)
             iteration += 1
-            tr_recall.update_state(y_tr, class_score)
-            tr_precision.update_state(y_tr, class_score)
-            tr_mio.update_state(y_tr, class_score)
+            class_score_M = tf.math.round(class_score)
+            y_tr_M = tf.math.round(y_tr)
+            tr_recall.update_state(y_tr_M, class_score_M)
+            tr_precision.update_state(y_tr_M, class_score_M)
+            tr_mio.update_state(y_tr_M, class_score_M)
+            if iteration % 491 == 0:
+                with summary_writer.as_default():
+                    # tf.summary.image("Train Logits" + str(iteration), class_score, max_outputs=5, step=iteration)
+                    # tf.summary.image("Train Target" + str(iteration), y_tr, max_outputs=5, step=iteration)
+                    tf.summary.image("Train" + str(iteration),
+                                     tf.concat([class_score, y_tr], axis=2),
+                                     max_outputs=5, step=iteration)
+
             print('.', end='')
             if (iteration + 1) % 100 == 0:
                 print()
@@ -914,58 +929,69 @@ def training(neuralnet, dataset, epochs, batch_size):
         # lr and wd can be a function or a tensor
         neuralnet.learning_rate = 1e-3 * schedule(iteration)
         neuralnet.weight_decay = lambda: 1e-4 * schedule(iteration)
+        wDecay = lambda: 1e-4 * schedule(iteration)
+
+
+test_iter = 0
 
 
 def test(neuralnet, dataset, epoch):
     print("\nTest...")
-
+    global test_iter
     # Much of this code is copied from the ResNest source I found and then translated to Keras
     # This simply calculates the metrics listed at the top using the logits and true
     # I do not know if this is 100% bug free since switching to probability labels
     total_loss = 0
     while True:
-        x_te, y_te, terminator = dataset.next_test(1)  # y_te does not used in this prj.
+        x_te, y_te, terminator = dataset.next_test(16)  # y_te does not used in this prj.
         loss, class_score = neuralnet.step(x=x_te, y=y_te, train=False)
         loss = tf.reduce_sum(loss)
-        precision.update_state(y_te, class_score)
-        recall.update_state(y_te, class_score)
-        pre_c2.update_state(y_te[:, :, -1], class_score[:, :, -1])
-        re_c2.update_state(y_te[:, :, -1], class_score[:, :, -1])
-        mio.update_state(y_te, class_score)
+        class_score_M = tf.math.round(class_score)
+        y_te_M = tf.math.round(y_te)
+        precision.update_state(y_te_M, class_score_M)
+        recall.update_state(y_te_M, class_score_M)
+        pre_c2.update_state(y_te_M[:, :, -1], class_score_M[:, :, -1])
+        re_c2.update_state(y_te_M[:, :, -1], class_score_M[:, :, -1])
+        mio.update_state(y_te_M, class_score_M)
         total_loss += loss
+        if test_iter % 23 == 0:
+            with summary_writer.as_default():
+                # tf.summary.image("Test Logits" + str(test_iter), class_score, step=test_iter)
+                # tf.summary.image("Test Target" + str(test_iter), y_te, step=test_iter)
+                tf.summary.image("Test" + str(test_iter), tf.concat([class_score, y_te], axis=2), step=test_iter)
         if terminator:
             break
+        test_iter += 1
 
     # This half of the code prints the metrics to the screen and saves them to a log file.
     # Later, you can open them up on tensorboard to see the progress.
     total_loss /= dataset.num_te
+    f1 = 2 * (precision.result() * recall.result()) / (precision.result() + recall.result())
+    f1_2 = 2 * (pre_c2.result() * re_c2.result()) / (pre_c2.result() + re_c2.result())
+
     with summary_writer.as_default():
         tf.summary.scalar("loss", total_loss, step=epoch)
-        print("loss = {}".format(total_loss))
-        f1 = 2 * (precision.result() * recall.result()) / (precision.result() + recall.result())
         tf.summary.scalar("mean_IoU", mio.result(), step=epoch)
-        print("IoU = {}".format(mio.result()))
-        mio.reset_states()
         tf.summary.scalar("val_f1", f1, step=epoch)
-        print("f1 = {}".format(f1))
         tf.summary.scalar("val_precision", precision.result(), step=epoch)
-        print("precision = {}".format(precision.result()))
-        precision.reset_states()
         tf.summary.scalar("recall_recall", recall.result(), step=epoch)
-        print("recall = {}".format(recall.result()))
-        precision.reset_states()
-
-        # This is likely the same thing as above but I try to calculate the numbers for just class 2.
-        # Comment out if you are that concerned about efficiency of the model's training.
-        f1_2 = 2 * (pre_c2.result() * re_c2.result()) / (pre_c2.result() + re_c2.result())
         tf.summary.scalar("c2_f1", f1_2, step=epoch)
         tf.summary.scalar("c2_precision", pre_c2.result(), step=epoch)
-        precision.reset_states()
         tf.summary.scalar("c2_recall", re_c2.result(), step=epoch)
-        precision.reset_states()
-
         tf.summary.scalar("loss", total_loss, step=epoch)
-        return f1
+
+    print("loss = {}".format(total_loss))
+    print("IoU = {}".format(mio.result()))
+    print("f1 = {}".format(f1))
+    print("precision = {}".format(precision.result()))
+    print("recall = {}".format(recall.result()))
+
+    mio.reset_states()
+    precision.reset_states()
+    recall.reset_states()
+    pre_c2.reset_states()
+    re_c2.reset_states()
+    return f1
 
 
 def main():
@@ -981,9 +1007,8 @@ def main():
     # print(neuralnet.visionModel.summary())
     print(len(neuralnet.visionModel.layers))
     training(neuralnet=neuralnet, dataset=dataset, epochs=51, batch_size=16)
-    neuralnet.visionModel.save('/home/silver/TBI/ResNeSt_T1')
+    neuralnet.visionModel.save('/home/silver/TBI/Models/ResNeSt_T1')
 
 
 if __name__ == '__main__':
-
     main()
