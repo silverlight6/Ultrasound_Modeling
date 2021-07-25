@@ -1,10 +1,7 @@
 import tensorflow as tf
 # import tensorflow_addons as tfa
-import numpy as np
 from ResNest import ResNest
 from Decoder import DecoderCup
-
-mirrored_strategy = tf.distribute.MultiWorkerMirroredStrategy()
 
 
 class Attention(tf.Module):
@@ -196,24 +193,33 @@ class VisionTransformer(tf.Module):
         self.input_shape = [img_size[0], img_size[1], 10]
         self.batch_size = batch_size
         self.weight_decay = weight_decay
-        # https://github.com/keras-team/keras/blob/master/keras/losses.py
-        # I am today years old when I realized keras makes their loss implementations public.
-        self.loss = tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1)
-        # self.loss = self.my_loss_cat
+
         self.learning_rate = learning_rate
         # self.optimizer = tfa.optimizers.AdamW(weight_decay=self.weight_decay, learning_rate=self.learning_rate)
         self.optimizer = tf.optimizers.Adam(learning_rate=self.learning_rate)
+        self.loss = tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1,
+                                                            reduction=tf.keras.losses.Reduction.NONE)
+        # self.loss = self.my_loss_cat
         self.alpha = 2
         self.class_factor = [0.06329, 0.027567, 0.90914]
-        # self.initialize = self.forward(np.zeros([16, 256, 80, 10]))
+
+        self.precision = tf.keras.metrics.Precision(name='precision')
+        self.recall = tf.keras.metrics.Recall(name='recall')
+        self.pre_c2 = tf.keras.metrics.Precision(name='precision_c2')
+        self.re_c2 = tf.keras.metrics.Recall(name='recall_c2')
+        self.mio = tf.keras.metrics.MeanIoU(name='mean_iou', num_classes=3)
+        self.tr_recall = tf.keras.metrics.Recall(name='tr_recall')
+        self.tr_precision = tf.keras.metrics.Precision(name='tr_precision')
+        self.tr_mio = tf.keras.metrics.MeanIoU(name='tr_mio', num_classes=3)
+
         self.visionModel = self.model()
+        # self.initialize = self.forward(np.zeros([4, 256, 80, 10]))
 
     def model(self):
-        with mirrored_strategy.scope():
-            inputA = tf.keras.Input(shape=self.input_shape, batch_size=self.batch_size)
-            output = self.forward(inputA)
-            model = tf.keras.Model(inputs=inputA, outputs=output)
-            model.compile(loss=self.loss, optimizer=self.optimizer)
+        inputA = tf.keras.Input(shape=self.input_shape, batch_size=int(self.batch_size / 4))
+        output = self.forward(inputA)
+        model = tf.keras.Model(inputs=inputA, outputs=output)
+        model.compile(loss=self.loss, optimizer=self.optimizer)
         return model
 
     def forward(self, x):
@@ -221,25 +227,39 @@ class VisionTransformer(tf.Module):
         logits = self.decoder(x, features)
         return logits, attn_weights
 
+    def compute_loss(self, y_true, y_pred):
+        per_example_loss = self.loss(y_true, y_pred)
+        return tf.nn.compute_average_loss(per_example_loss, global_batch_size=self.batch_size)
+
     '''
     jit_compile simply allows the model to use more of the GPU space available to it.
     This method is the training loop for the model.
     GradientTape records all of the partials for the model and backprops to update weights
     The bottom is a few calculations for metrics purposes.
     '''
-    # @tf.function(jit_compile=True)
-    def step(self, data_x, data_y, train=False):
-        for (x, y) in (data_x, data_y):
-            with tf.GradientTape() as tape:
-                # # Really not sure if this line of code is helpful or just slows things down. Uncomment if you want.
-                tape.watch(self.visionModel.trainable_variables)
-                logits, _ = self.forward(x)
-                smce = self.loss(y_true=y, y_pred=logits)
-                # smce += sum(self.visionModel.losses)
-            if train:
-                gradients = tape.gradient(smce, self.visionModel.trainable_variables)
-                clip_gradients, _ = tf.clip_by_global_norm(gradients, 2.0)
-                self.optimizer.apply_gradients(zip(clip_gradients, self.visionModel.trainable_variables))
+    @tf.function(jit_compile=True)
+    def train_step(self, x, y):
+        with tf.GradientTape() as tape:
+            # # Really not sure if this line of code is helpful or just slows things down. Uncomment if you want.
+            tape.watch(self.visionModel.trainable_variables)
+            logits, _ = self.forward(x)
+            smce = self.compute_loss(y_true=y, y_pred=logits)
+            # smce += sum(self.visionModel.losses)
+        gradients = tape.gradient(smce, self.visionModel.trainable_variables)
+        clip_gradients, _ = tf.clip_by_global_norm(gradients, 2.0)
+        self.optimizer.apply_gradients(zip(clip_gradients, self.visionModel.trainable_variables))
+        y_round = tf.math.round(y)
+        x_round = tf.math.round(logits)
+        self.tr_recall.update_state(y_round, x_round)
+        self.tr_precision.update_state(y_round, x_round)
+        self.tr_mio.update_state(y_round, x_round)
+        return smce, logits,
+
+    def step(self, x, y):
+        # # Really not sure if this line of code is helpful or just slows things down. Uncomment if you want.
+        logits, _ = self.forward(x)
+        smce = self.compute_loss(y_true=y, y_pred=logits)
+        # smce += sum(self.visionModel.losses)
         return smce, logits
 
     def __call__(self, x, *args, **kwargs):

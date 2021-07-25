@@ -83,8 +83,9 @@ def dataAug(image, label):
     r = random.randint(0, 100000)
     t = random.randint(0, 100000)
 
-    image = image.numpy()
-    label = label.numpy()
+    # image = image.numpy()
+    # label = label.numpy()
+    # print("I am in DataAugmentations")
 
     # flip horizontal
     if r % 2:
@@ -124,6 +125,8 @@ def dataAug(image, label):
 
     # print("image output shape = {}".format(image.shape))
     # print("label output shape = {}".format(label.shape))
-    image = tf.convert_to_tensor(image, dtype=tf.float64)
-    label = tf.convert_to_tensor(label, dtype=tf.float32)
+    # image = tf.convert_to_tensor(image, dtype=tf.float64)
+    # label = tf.convert_to_tensor(label, dtype=tf.float32)
+    image = image.astype(np.float64)
+    label = label.astype(np.float32)
     return image, label

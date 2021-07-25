@@ -27,10 +27,10 @@ class DecoderBlock(tf.Module):
                                               kernel_regularizer=self.wDecay)
         # self.upsample = tf.keras.layers.UpSampling2D()
         self.LeakyReLU1 = tf.keras.layers.LeakyReLU()
-        self.bn1_0 = tf.keras.layers.BatchNormalization()
-        self.bn1_1 = tf.keras.layers.BatchNormalization()
-        self.bn1_2 = tf.keras.layers.BatchNormalization()
-        self.bn1_3 = tf.keras.layers.BatchNormalization()
+        self.bn1_0 = tf.keras.layers.experimental.SyncBatchNormalization()
+        self.bn1_1 = tf.keras.layers.experimental.SyncBatchNormalization()
+        self.bn1_2 = tf.keras.layers.experimental.SyncBatchNormalization()
+        self.bn1_3 = tf.keras.layers.experimental.SyncBatchNormalization()
         self.conv2_0 = tf.keras.layers.Conv2D(out_channels // 4, 1, strides=1, padding='SAME',
                                               kernel_initializer=tf.keras.initializers.HeNormal(),
                                               kernel_regularizer=self.wDecay)
@@ -46,10 +46,10 @@ class DecoderBlock(tf.Module):
                                               kernel_initializer=tf.keras.initializers.HeNormal(),
                                               kernel_regularizer=self.wDecay,
                                               dilation_rate=(8, 8))
-        self.bn2_0 = tf.keras.layers.BatchNormalization()
-        self.bn2_1 = tf.keras.layers.BatchNormalization()
-        self.bn2_2 = tf.keras.layers.BatchNormalization()
-        self.bn2_3 = tf.keras.layers.BatchNormalization()
+        self.bn2_0 = tf.keras.layers.experimental.SyncBatchNormalization()
+        self.bn2_1 = tf.keras.layers.experimental.SyncBatchNormalization()
+        self.bn2_2 = tf.keras.layers.experimental.SyncBatchNormalization()
+        self.bn2_3 = tf.keras.layers.experimental.SyncBatchNormalization()
 
         # self.up = tf.keras.layers.Conv2DTranspose(out_channels, kernel_size=4, strides=2, padding='same')
         self.up = tf.keras.layers.Conv2DTranspose(out_channels, 3, strides=2, padding='Same',
@@ -107,7 +107,7 @@ class DecoderCup(tf.Module):
             kernel_regularizer=self.wDecay
         )
         self.LeakyReLU1 = tf.keras.layers.LeakyReLU()
-        self.bn1 = tf.keras.layers.BatchNormalization()
+        self.bn1 = tf.keras.layers.LayerNormalization()
 
         skip_channels = [256, 128, 64]
         blocks = [

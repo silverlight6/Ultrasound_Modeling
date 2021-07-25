@@ -12,15 +12,15 @@ class ResNest(tf.Module):
         self.radix, self.kpaths = radix, kpaths
         self.wDecay = wDecay
         self.conv1 = tf.keras.layers.Conv2D(16, 3, strides=1, padding='SAME', kernel_regularizer=self.wDecay,
-                                            kernel_initializer=tf.keras.initializers.HeNormal(),)
+                                            kernel_initializer=tf.keras.initializers.HeNormal(), name="initial_conv")
         self.conv1_act = tf.keras.layers.LeakyReLU()
         self.convtmp_1 = tf.keras.layers.Conv2D(32, 3, strides=1, padding='SAME', kernel_regularizer=self.wDecay,
                                                 kernel_initializer=tf.keras.initializers.HeNormal(),)
-        self.convtmp_1bn = tf.keras.layers.BatchNormalization()
+        self.convtmp_1bn = tf.keras.layers.experimental.SyncBatchNormalization()
         self.convtmp_1act = tf.keras.layers.LeakyReLU()
         self.convtmp_2 = tf.keras.layers.Conv2D(32, 3, strides=1, padding='SAME', kernel_regularizer=self.wDecay,
                                                 kernel_initializer=tf.keras.initializers.HeNormal(),)
-        self.convtmp_2bn = tf.keras.layers.BatchNormalization()
+        self.convtmp_2bn = tf.keras.layers.experimental.SyncBatchNormalization()
         self.convtmp_2act = tf.keras.layers.LeakyReLU()
         self.conv1_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2)
         self.conv2_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2)
@@ -83,7 +83,7 @@ class residual_S(tf.Module):
                                                  dilation_rate=(self.atrous, self.atrous),
                                                  kernel_initializer=tf.keras.initializers.HeNormal(),
                                                  kernel_regularizer=self.wDecay)
-        self.convtmp_scbn = tf.keras.layers.BatchNormalization()
+        self.convtmp_scbn = tf.keras.layers.LayerNormalization()
         self.convtmp_scact = tf.keras.layers.LeakyReLU()
 
     def forward(self, x):
@@ -122,14 +122,14 @@ class cardinal(tf.Module):
         self.conv1 = tf.keras.layers.Conv2D(outchannel_cv11, 1, strides=1, padding='SAME',
                                             dilation_rate=(self.atrous, self.atrous), kernel_regularizer=self.wDecay,
                                             kernel_initializer=tf.keras.initializers.HeNormal())
-        self.conv1_bn = tf.keras.layers.BatchNormalization()
+        self.conv1_bn = tf.keras.layers.LayerNormalization()
         self.conv1_act = tf.keras.layers.LeakyReLU()
 
         self.conv2 = tf.keras.layers.Conv2D(outchannel_cvkk, self.ksize,
                                             strides=1, padding='SAME', dilation_rate=(self.atrous, self.atrous),
                                             kernel_initializer=tf.keras.initializers.HeNormal(),
                                             kernel_regularizer=self.wDecay)
-        self.conv2_bn = tf.keras.layers.BatchNormalization()
+        self.conv2_bn = tf.keras.layers.LayerNormalization()
         self.conv2_act = tf.keras.layers.LeakyReLU()
         self.split = split_attention(outchannel_cvkk, self.radix, self.atrous, self.wDecay)
 
@@ -161,7 +161,7 @@ class split_attention(tf.Module):
                                              dilation_rate=(self.atrous, self.atrous),
                                              kernel_initializer=tf.keras.initializers.HeNormal(),
                                              kernel_regularizer=self.wDecay)
-        self.dense1_bn = tf.keras.layers.BatchNormalization()
+        self.dense1_bn = tf.keras.layers.LayerNormalization()
         self.dense1_act = tf.keras.layers.LeakyReLU()
         self.dense2 = tf.keras.layers.Conv2D(self.inchannel, 1, strides=1, padding='SAME',
                                              dilation_rate=(self.atrous, self.atrous),
