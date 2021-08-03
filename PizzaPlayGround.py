@@ -38,12 +38,12 @@ def output2DImages(iteration):
                 hPath = os.path.join(path, file)                  # put file name on path
                 pathName = file[0:17]                             # get path to print
                 Harmonics = loadmat(hPath)
-
                 bloodMask = np.array(list(Harmonics['bloodMaskThick']))
                 brainMask = np.array(list(Harmonics['brainMask']))
                 bMode = np.array(list(Harmonics['bModeNorm']))
                 # print("Keys are {}".format(Harmonics.keys()))
-
+                if len(bloodMask) == 0:
+                    break
                 if mode == 0:
                     harmonic = np.array(list(Harmonics['harmonics']))
                     # separate real and imaginary.
@@ -68,6 +68,7 @@ def output2DImages(iteration):
                 # Smooth & Create the Label
                 label = bloodMask + 1
                 label = label.astype('float32')
+                # print(label.shape)
                 brainMask = cv2.resize(brainMask, (80, 256))
                 label = cv2.resize(label, (80, 256))
                 label = np.where(brainMask == 0, 0, label)
@@ -126,7 +127,7 @@ def output2DImages(iteration):
 
     # data paths; it is just what it sounds like
     # watch out for polar versus non-polar
-    dataPaths = "/home/silver/TBI/CardiacData/"
+    dataPaths = "/home/silver/TBI/CardiacData_3/"
 
     # make sure that data gets looked at even
 
@@ -170,7 +171,7 @@ def output2DImages(iteration):
     print("training {}".format(trainingData.shape))
     print("testing {}".format(testingData.shape))
 
-    savePath = "/home/silver/TBI/NPFiles/Disp/"
+    savePath = "/home/silver/TBI/NPFiles/Disp3D/"
     print("saved in : {}".format(savePath))
     np.save(savePath + "TrainingData.npy", trainingData)
     np.save(savePath + "TestingData.npy", testingData)
@@ -179,4 +180,4 @@ def output2DImages(iteration):
 
 
 if __name__ == '__main__':
-    output2DImages(9)
+    output2DImages(0)

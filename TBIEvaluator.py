@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+import tensorflow_addons as tfa
 import matplotlib
 from matplotlib import pyplot as plt
 # from sklearn.metrics import confusion_matrix
@@ -72,14 +73,14 @@ def preProcess(input_data, xdim=160, ydim=192):
 
 
 def preProcess1(input_data, xdim=160, ydim=192):
-    tt_y = input_data[image_num, :, :, :, 0]
+    y = input_data[image_num, :, :, :, 0]
     bMode = input_data[image_num, :, :, :, 11]
-    tt_x = input_data[image_num, :, :, :, 1:11]
-    tt_x = np.array(tt_x)
-    tt_y = np.array(tt_y)
-    tt_y = tt_y.reshape([xdim, ydim])
-    tt_x = tt_x.reshape([1, xdim, ydim, -1])
-    return tt_x, tt_y, bMode
+    x = input_data[image_num, :, :, :, 1:11]
+    x = np.array(x)
+    y = np.array(y)
+    y = y.reshape([xdim, ydim])
+    x = x.reshape([1, xdim, ydim, -1])
+    return x, y, bMode
 
 
 def preProcess2(input_data, xdim=256, ydim=80):
@@ -189,23 +190,30 @@ def Polar_Model(sAll=False):
             tmpcnt = tmpcnt + 16
             print(tmpcnt)
         print(tmpcnt)
-        # for i in range(0, len(pathNames)):
-        #     image_num = i
-        #     [testX, testY] = preProcess1(data_m, xdim=256, ydim=80)
-        #     PolarProcess(testX, testY, name=pathNames[i])
 
 
 def PolarProcess(testX, testY, name, bMode=None, paths=None):
 
     # DispInput(testX)
-    SegNet = tf.keras.models.load_model("/home/silver/TBI/Models/ResNeSt_T1",
-                                        custom_objects={'my_loss_cat': my_loss_cat})
+    SegNet = tf.keras.models.load_model("/home/silver/TBI/Models/ResNeSt_T0",
+                                        custom_objects={'my_loss_cat': my_loss_cat,
+                                                        'add_ons>AdamW': tfa.optimizers.AdamW})
     # SegNet = tf.keras.models.load_model("/TBI/Models/Transformer_1")
     # prob = SegNet({"imp0": tf.expand_dims(testX[0, :, :, :], 0), "imp1": tf.expand_dims(testX[1, :, :, :], 0),
     #                "imp2": tf.expand_dims(testX[2, :, :, :], 0), "imp3": tf.expand_dims(testX[3, :, :, :], 0),
     #                "imp4": tf.expand_dims(testX[4, :, :, :], 0), "imp5": tf.expand_dims(testX[5, :, :, :], 0),
     #                "imp6": tf.expand_dims(testX[6, :, :, :], 0), "imp7": tf.expand_dims(testX[7, :, :, :], 0),
     #                "imp8": tf.expand_dims(testX[8, :, :, :], 0), "imp9": tf.expand_dims(testX[9, :, :, :], 0)})
+    # Next 6 lines are for using the model generated model.
+    # mask, _ = SegNet(testX)
+    # mask = np.array(mask)
+    # mask = np.round(mask)
+    # for i in range(0, 10):
+    #     testX[:, :, :, i] = np.where(mask[0, :, :, 0] == 1, 0.0, testX[:, :, :, i])
+    # SegNet = tf.keras.models.load_model("/home/silver/TBI/Models/ResNeSt_T1-9",
+    #                                     custom_objects={'my_loss_cat': my_loss_cat,
+    #                                                     'add_ons>AdamW': tfa.optimizers.AdamW})
+
     prob, _ = SegNet(testX)
     probOut = prob[:, :, :, -1]
     prob = np.array(prob)
@@ -225,7 +233,7 @@ def PolarProcess(testX, testY, name, bMode=None, paths=None):
     dispDict["probMap"] = True
     dispDict["bMode"] = True
     # print(testY.shape)
-    Display(probO, testY, name=name, numDim=3, bMode=bMode, probmap=probOut)
+    Display(probO, testY, name=name, numDim=2, bMode=bMode, probmap=probOut)
     return
 
 
@@ -255,7 +263,7 @@ def Display(prob=None, true=None, mask=None, confusion=None, name="True", numDim
     colormap = 'magma'
     if dispDict["prob"]:
         ax[county, countx].grid(False)
-        ax[county, countx].pcolormesh(xAxis, yAxis, prob, shading='flat', cmap=colormap)
+        ax[county, countx].pcolormesh(xAxis, yAxis, prob, shading='flat', cmap=colormap, vmin=0, vmax=2)
         ax[county, countx].invert_yaxis()
         ax[county, countx].title.set_text('Prediction')
         checkCount(name)
@@ -306,7 +314,8 @@ def Display(prob=None, true=None, mask=None, confusion=None, name="True", numDim
     if dispDict["bMode"]:
         _, bin_edges = np.histogram(bMode, bins=25)
         ax[county, countx].grid(False)
-        ax[county, countx].pcolormesh(xAxis, yAxis, bMode, shading='flat', cmap='binary', vmin=bin_edges[2], vmax=bin_edges[-2])
+        ax[county, countx].pcolormesh(xAxis, yAxis, bMode, shading='flat', cmap='binary',
+                                      vmin=bin_edges[2], vmax=bin_edges[-2])
         ax[county, countx].invert_yaxis()
         ax[county, countx].title.set_text('bMode')
         checkCount(name)

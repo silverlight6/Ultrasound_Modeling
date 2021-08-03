@@ -259,7 +259,8 @@ def output2DImages(iteration):
 
     IPH_patients = [8, 9, 10, 12, 24, 47, 53, 62, 66, 67, 69, 74, 75, 78, 85, 89, 93,
                     101, 105, 107, 110, 112, 113, 120, 121, 126, 129, 130, 133]
-    bad_patients = [1, 14, 22, 23, 27, 28, 32, 34, 35, 36, 37, 38, 39, 44, 49, 69, 71, 78, 82, 90, 98, 101, 129, 928]
+    bad_patients = [1, 14, 22, 23, 27, 28, 32, 34, 35, 36, 37, 38, 39, 44, 49, 69, 71, 78, 82, 90, 98, 101, 121, 124,
+                    128, 133, 136, 928]
     timeStart = np.zeros([100])
     timeEnd = np.zeros([100])
     # counting files
@@ -275,12 +276,12 @@ def output2DImages(iteration):
                 # print("Loading file {}".format(pathName))
                 Harmonics = loadmat(hPath)
                 # print("Finished file {} at time {}".format(pathName, time.time() - timeA))
-                # print(Harmonics.keys())
 
                 normalMask = np.array(list(Harmonics['normalMask']))
                 bloodMask = np.array(list(Harmonics['bloodMask']))
                 brainMask = np.array(list(Harmonics['brainMask']))
                 bMode = np.array(list(Harmonics['bModeNorm']))
+                # print("Keys are {}".format(Harmonics.keys()))
 
                 if mode == 0:
                     harmonic = np.array(list(Harmonics['harmonics']))
@@ -309,17 +310,18 @@ def output2DImages(iteration):
                 bMode = np.log10(bMode)
 
                 # Smooth & Create the Label
-                label = np.where(bloodMask > normalMask, 2, 1)
-                label = label.astype('float32')
-                label = cv2.GaussianBlur(src=label, ksize=(9, 9), sigmaX=4)
-                label = np.where(bloodMask > normalMask, 2, label)
-                label = cv2.GaussianBlur(src=label, ksize=(3, 3), sigmaX=2)
-                label = np.where(bloodMask > normalMask, 2, label)
-                # label = np.where(bloodMask > normalMask, 1, 0)
+                # label = np.where(bloodMask > normalMask, 2, 1)
+                # label = label.astype('float32')
+                # label = cv2.GaussianBlur(src=label, ksize=(9, 9), sigmaX=4)
+                # label = np.where(bloodMask > normalMask, 2, label)
+                # label = cv2.GaussianBlur(src=label, ksize=(3, 3), sigmaX=2)
+                # label = np.where(bloodMask > normalMask, 2, label)
+                # label = cv2.resize(label, (80, 256))
                 brainMask = cv2.resize(brainMask, (80, 256))
-                label = cv2.resize(label, (80, 256))
-                label = np.where(brainMask == 0, 0, label)
-                label = label.reshape([256, 80, 1])
+                # label = np.where(brainMask == 0, 0, label)
+                # # This code is for finding the mask
+                label = np.where(brainMask == 0, 0, 1)
+                # label = label.reshape([256, 80, 1])
                 cycles = real.shape[-1]
                 real = real.astype('float64')
                 imag = imag.astype('float64')
@@ -453,6 +455,12 @@ def output2DImages(iteration):
     testingPaths = np.array(testingPaths)
     # validationPaths = np.array(validationPaths)
 
+    random_seed = np.random.randint(0, 1e5)
+    trainingData = shuffle(trainingData, random_state=random_seed)
+    testingData = shuffle(testingData, random_state=random_seed // 17)
+    trainingPaths = shuffle(trainingPaths, random_state=random_seed)
+    testingPaths = shuffle(testingPaths, random_state=random_seed // 17)
+
     # let us see what we got
     # print(testingPaths)
     print("training {}".format(trainingData.shape))
@@ -470,7 +478,7 @@ def output2DImages(iteration):
 
 
 if __name__ == '__main__':
-    output2DImages(0)
+    output2DImages(4)
     # FetchPolarAxis('/home/silver/TBI/CardiacData/DoD001/DoD001_Ter001_RC1_Displacement_Normalized_2.mat')
 
 
