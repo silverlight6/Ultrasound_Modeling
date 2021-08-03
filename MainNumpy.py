@@ -4,7 +4,7 @@ import os
 from Dataset_2 import Dataset
 from VisionTransformer import VisionTransformer
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 wDecay = None
 
 
@@ -78,7 +78,7 @@ class Process(object):
                 self.test(neuralnet, dataset, epoch)
             # test(neuralnet, dataset, epoch)
             schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
-                [5000, 10000, 20000, 30000, 40000], [1e-0, 3e-1, 1e-1, 3e-2, 1e-2, 3e-3])
+                [2000, 4000, 8000, 10000, 15000], [1e-0, 3e-1, 1e-1, 3e-2, 1e-2, 3e-3])
             # lr and wd can be a function or a tensor
             neuralnet.learning_rate = 1e-2 * schedule(iteration)
             neuralnet.weight_decay = lambda: 1e-4 * schedule(iteration)
@@ -134,7 +134,7 @@ class Process(object):
         print("f1 = {}".format(f1))
         print("precision = {}".format(self.precision.result()))
         print("recall = {}".format(self.recall.result()))
-        print("learning rate = {}".format(neuralnet.learning_rate))
+        # print("learning rate = {}".format(neuralnet.learning_rate))
 
         self.mio.reset_states()
         self.precision.reset_states()
@@ -151,8 +151,9 @@ def main():
     dataset = Dataset(train_data, val_data)
     # config = tf.estimator.RunConfig(train_distribute=mirrored_strategy)
     # with mirrored_strategy.scope():
-    neuralnet = VisionTransformer()
-    batch_size = 16
+    batch_size = 32
+    neuralnet = VisionTransformer(batch_size)
+
     # tf.keras.utils.model_to_dot(neuralnet.visionModel, to_file='TransUNet_dot.png', show_shapes=True)
 
     # print(neuralnet.visionModel.summary())

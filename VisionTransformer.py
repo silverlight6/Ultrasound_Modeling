@@ -1,5 +1,5 @@
 import tensorflow as tf
-# import tensorflow_addons as tfa
+import tensorflow_addons as tfa
 from ResNest import ResNest
 from Decoder import DecoderCup
 
@@ -185,7 +185,7 @@ class Transformer(tf.Module):
 
 
 class VisionTransformer(tf.Module):
-    def __init__(self, img_size=(256, 80), num_classes=3, learning_rate=1e-3, weight_decay=1e-4, batch_size=16):
+    def __init__(self, batch_size, img_size=(256, 80), num_classes=3, learning_rate=1e-3, weight_decay=1e-4, ):
         super(VisionTransformer, self).__init__()
         self.num_classes = num_classes
         self.transformer = Transformer(img_size)
@@ -202,21 +202,11 @@ class VisionTransformer(tf.Module):
         # self.loss = self.my_loss_cat
         self.alpha = 2
         self.class_factor = [0.06329, 0.027567, 0.90914]
-
-        self.precision = tf.keras.metrics.Precision(name='precision')
-        self.recall = tf.keras.metrics.Recall(name='recall')
-        self.pre_c2 = tf.keras.metrics.Precision(name='precision_c2')
-        self.re_c2 = tf.keras.metrics.Recall(name='recall_c2')
-        self.mio = tf.keras.metrics.MeanIoU(name='mean_iou', num_classes=3)
-        self.tr_recall = tf.keras.metrics.Recall(name='tr_recall')
-        self.tr_precision = tf.keras.metrics.Precision(name='tr_precision')
-        self.tr_mio = tf.keras.metrics.MeanIoU(name='tr_mio', num_classes=3)
-
         self.visionModel = self.model()
         # self.initialize = self.forward(np.zeros([4, 256, 80, 10]))
 
     def model(self):
-        inputA = tf.keras.Input(shape=self.input_shape, batch_size=int(self.batch_size / 4))
+        inputA = tf.keras.Input(shape=self.input_shape, batch_size=int(self.batch_size))
         output = self.forward(inputA)
         model = tf.keras.Model(inputs=inputA, outputs=output)
         model.compile(loss=self.loss, optimizer=self.optimizer)
@@ -246,15 +236,11 @@ class VisionTransformer(tf.Module):
             smce = self.compute_loss(y_true=y, y_pred=logits)
             # smce += sum(self.visionModel.losses)
         gradients = tape.gradient(smce, self.visionModel.trainable_variables)
-        clip_gradients, _ = tf.clip_by_global_norm(gradients, 2.0)
+        clip_gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
         self.optimizer.apply_gradients(zip(clip_gradients, self.visionModel.trainable_variables))
-        y_round = tf.math.round(y)
-        x_round = tf.math.round(logits)
-        self.tr_recall.update_state(y_round, x_round)
-        self.tr_precision.update_state(y_round, x_round)
-        self.tr_mio.update_state(y_round, x_round)
-        return smce, logits,
+        return smce, logits
 
+    @tf.function(jit_compile=True)
     def step(self, x, y):
         # # Really not sure if this line of code is helpful or just slows things down. Uncomment if you want.
         logits, _ = self.forward(x)
