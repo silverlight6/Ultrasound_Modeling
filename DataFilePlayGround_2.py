@@ -1,4 +1,5 @@
 import numpy as np
+import config
 import os                           # reading files
 import cv2                          # resize
 import math
@@ -95,6 +96,7 @@ def FetchPolarAxis(datapath):
     yaxis -= 4
 
     savePath = "/home/silver/TBI/NPFiles/"
+    savePath 
     print("saved in : {}".format(savePath))
     np.save(savePath + "xAxis.npy", xaxis)
     np.save(savePath + "yAxis.npy", yaxis)
@@ -418,7 +420,7 @@ def output2DImages(iteration):
 
     # data paths; it is just what it sounds like
     # watch out for polar versus non-polar
-    dataPaths = "/home/silver/TBI/CardiacData/"
+    dataPaths = config.RAW_DATA_PATH
 
     # make sure that data gets looked at even
 
@@ -467,7 +469,7 @@ def output2DImages(iteration):
     print("testing {}".format(testingData.shape))
     # print("validation {}".format(validationData.shape))
 
-    savePath = "/home/silver/TBI/NPFiles/Disp/"
+    savePath = config.PROCESSED_NUMPY
     print("saved in : {}".format(savePath))
     np.save(savePath + "TrainingData.npy", trainingData)
     np.save(savePath + "TestingData.npy", testingData)
