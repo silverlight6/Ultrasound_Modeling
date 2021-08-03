@@ -9,7 +9,7 @@ wDecay = None
 
 
 class Process(object):
-    def __init__(self, batch_size=16):
+    def __init__(self, batch_size=16, num_classes=3):
         self.summary_writer = tf.summary.create_file_writer(
             "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
         self.batch_size = batch_size
@@ -18,10 +18,10 @@ class Process(object):
         self.recall = tf.keras.metrics.Recall(name='recall')
         self.pre_c2 = tf.keras.metrics.Precision(name='precision_c2')
         self.re_c2 = tf.keras.metrics.Recall(name='recall_c2')
-        self.mio = tf.keras.metrics.MeanIoU(name='mean_iou', num_classes=3)
+        self.mio = tf.keras.metrics.MeanIoU(name='mean_iou', num_classes=num_classes)
         self.tr_recall = tf.keras.metrics.Recall(name='tr_recall')
         self.tr_precision = tf.keras.metrics.Precision(name='tr_precision')
-        self.tr_mio = tf.keras.metrics.MeanIoU(name='tr_mio', num_classes=3)
+        self.tr_mio = tf.keras.metrics.MeanIoU(name='tr_mio', num_classes=num_classes)
 
         self.test_iter = 0
 
@@ -148,17 +148,18 @@ def main():
     # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     train_data = '/home/silver/TBI/NPFiles/Disp/TrainingData.npy'
     val_data = '/home/silver/TBI/NPFiles/Disp/TestingData.npy'
-    dataset = Dataset(train_data, val_data)
+    num_class = 3
+    dataset = Dataset(train_data, val_data, num_class)
     # config = tf.estimator.RunConfig(train_distribute=mirrored_strategy)
     # with mirrored_strategy.scope():
     batch_size = 32
-    neuralnet = VisionTransformer(batch_size)
+    neuralnet = VisionTransformer(batch_size, num_classes=num_class)
 
     # tf.keras.utils.model_to_dot(neuralnet.visionModel, to_file='TransUNet_dot.png', show_shapes=True)
 
     # print(neuralnet.visionModel.summary())
     print(len(neuralnet.visionModel.layers))
-    process = Process(batch_size=batch_size)
+    process = Process(batch_size=batch_size, num_classes=num_class)
     process.training(neuralnet=neuralnet, dataset=dataset, epochs=51)
     neuralnet.visionModel.save('/home/silver/TBI/Models/ResNeSt_T0')
 

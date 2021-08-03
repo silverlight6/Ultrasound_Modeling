@@ -10,12 +10,16 @@ def label2vec(label):
     class_0 = np.expand_dims(np.where(label <= 0.95, 1, 0), axis=3)
     class_2 = np.expand_dims(class_2, axis=3)
     label = np.concatenate((class_0, class_1, class_2), axis=3)
+    # # This code is if you only have 2 classes. First class is equal to the label and the second class is the inverse
+    # class_1 = label
+    # class_0 = 1 - label
+    # label = np.concatenate((class_0, class_1), axis=3)
     return label
 
 
 class Dataset(object):
 
-    def __init__(self, train_path=None, val_path=None):
+    def __init__(self, train_path=None, val_path=None, num_class=3):
 
         print("\nInitializing Dataset...")
         train_data = np.load(train_path, allow_pickle=True)
