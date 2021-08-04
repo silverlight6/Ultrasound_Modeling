@@ -323,7 +323,7 @@ def output2DImages(iteration):
                 # label = np.where(brainMask == 0, 0, label)
                 # # This code is for finding the mask
                 label = np.where(brainMask == 0, 0, 1)
-                # label = label.reshape([256, 80, 1])
+                label = label.reshape([256, 80, 1])
                 cycles = real.shape[-1]
                 real = real.astype('float64')
                 imag = imag.astype('float64')
