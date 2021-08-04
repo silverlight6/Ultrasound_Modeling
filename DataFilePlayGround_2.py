@@ -268,7 +268,8 @@ def output2DImages(iteration):
     # counting files
     count = 0
 
-    def fileLoop(path, patient_num, iteration, mode):
+    # objective indicate if the data is for finding brain mask or bleed (0=brain, 1=bleed)
+    def fileLoop(path, patient_num, iteration, mode, objective):
         iteration = iteration % 10
         for file in os.listdir(path):
             if ".mat" in file:
@@ -312,17 +313,21 @@ def output2DImages(iteration):
                 bMode = np.log10(bMode)
 
                 # Smooth & Create the Label
-                # label = np.where(bloodMask > normalMask, 2, 1)
-                # label = label.astype('float32')
-                # label = cv2.GaussianBlur(src=label, ksize=(9, 9), sigmaX=4)
-                # label = np.where(bloodMask > normalMask, 2, label)
-                # label = cv2.GaussianBlur(src=label, ksize=(3, 3), sigmaX=2)
-                # label = np.where(bloodMask > normalMask, 2, label)
-                # label = cv2.resize(label, (80, 256))
                 brainMask = cv2.resize(brainMask, (80, 256))
-                # label = np.where(brainMask == 0, 0, label)
-                # # This code is for finding the mask
-                label = np.where(brainMask == 0, 0, 1)
+                if (objective == 0):
+                    # This code is for finding the brain mask
+                    label = np.where(brainMask == 0, 0, 1)
+                else:
+                    # Finding the blood, brain, and outside brain masks
+                    label = np.where(bloodMask > normalMask, 2, 1)
+                    label = label.astype('float32')
+                    label = cv2.GaussianBlur(src=label, ksize=(9, 9), sigmaX=4)
+                    label = np.where(bloodMask > normalMask, 2, label)
+                    label = cv2.GaussianBlur(src=label, ksize=(3, 3), sigmaX=2)
+                    label = np.where(bloodMask > normalMask, 2, label)
+                    label = cv2.resize(label, (80, 256))
+                    label = np.where(brainMask == 0, 0, label)
+                
                 label = label.reshape([256, 80, 1])
                 cycles = real.shape[-1]
                 real = real.astype('float64')
@@ -362,10 +367,11 @@ def output2DImages(iteration):
                     bModeO = cv2.resize(bModeO, (80, 256))
                     # tOutput = cv2.resize(tOutput, (80, 256), interpolation=cv2.INTER_CUBIC)
 
-                    # delete non-brain from input data
-                    for i in range(0, realO.shape[-1]):
-                        realO[:, :, i] = np.where(brainMask == 0, 0.0, realO[:, :, i])
-                        imagO[:, :, i] = np.where(brainMask == 0, 0.0, imagO[:, :, i])
+                    if (objective == 0):
+                        # delete non-brain from input data
+                        for i in range(0, realO.shape[-1]):
+                            realO[:, :, i] = np.where(brainMask == 0, 0.0, realO[:, :, i])
+                            imagO[:, :, i] = np.where(brainMask == 0, 0.0, imagO[:, :, i])
 
                     bModeO = bModeO.reshape([256, 80, 1])
 
@@ -438,7 +444,7 @@ def output2DImages(iteration):
             patient_num = int(patient_num)
             timeStart[count] = time.time()
             if patient_num not in bad_patients:
-                p = multiprocessing.Process(target=fileLoop, args=(fpath, patient_num, iteration, 1))
+                p = multiprocessing.Process(target=fileLoop, args=(fpath, patient_num, iteration, 1, 0))
                 p.start()
                 processes.append(p)
             count += 1
