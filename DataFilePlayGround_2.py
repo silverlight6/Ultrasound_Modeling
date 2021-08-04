@@ -268,7 +268,7 @@ def output2DImages(iteration):
     # counting files
     count = 0
 
-    # objective indicate if the data is for finding brain mask or bleed (0=brain, 1=bleed)
+    # objective indicates if the data for finding brain mask or bleed (0=brain, 1=bleed)
     def fileLoop(path, patient_num, iteration, mode, objective):
         iteration = iteration % 10
         for file in os.listdir(path):
@@ -367,7 +367,7 @@ def output2DImages(iteration):
                     bModeO = cv2.resize(bModeO, (80, 256))
                     # tOutput = cv2.resize(tOutput, (80, 256), interpolation=cv2.INTER_CUBIC)
 
-                    if (objective == 0):
+                    if (objective == 1):
                         # delete non-brain from input data
                         for i in range(0, realO.shape[-1]):
                             realO[:, :, i] = np.where(brainMask == 0, 0.0, realO[:, :, i])
