@@ -475,7 +475,7 @@ def output2DImages(iteration):
     print("testing {}".format(testingData.shape))
     # print("validation {}".format(validationData.shape))
 
-    savePath = config.PROCESSED_NUMPY
+    savePath = config.PROCESSED_NUMPY_PATH
     print("saved in : {}".format(savePath))
     np.save(savePath + "TrainingData.npy", trainingData)
     np.save(savePath + "TestingData.npy", testingData)
