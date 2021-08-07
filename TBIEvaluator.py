@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-import tensorflow_addons as tfa
+# import tensorflow_addons as tfa
 import matplotlib
 from matplotlib import pyplot as plt
 # from sklearn.metrics import confusion_matrix
@@ -196,8 +196,8 @@ def PolarProcess(testX, testY, name, bMode=None, paths=None):
 
     # DispInput(testX)
     SegNet = tf.keras.models.load_model("/home/silver/TBI/Models/ResNeSt_T0",
-                                        custom_objects={'my_loss_cat': my_loss_cat,
-                                                        'add_ons>AdamW': tfa.optimizers.AdamW})
+                                        custom_objects={'my_loss_cat': my_loss_cat})
+                                                        # 'add_ons>AdamW': tfa.optimizers.AdamW})
     # SegNet = tf.keras.models.load_model("/TBI/Models/Transformer_1")
     # prob = SegNet({"imp0": tf.expand_dims(testX[0, :, :, :], 0), "imp1": tf.expand_dims(testX[1, :, :, :], 0),
     #                "imp2": tf.expand_dims(testX[2, :, :, :], 0), "imp3": tf.expand_dims(testX[3, :, :, :], 0),
