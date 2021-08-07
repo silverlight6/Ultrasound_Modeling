@@ -95,8 +95,7 @@ def FetchPolarAxis(datapath):
     xaxis += 100
     yaxis -= 4
 
-    savePath = "/home/silver/TBI/NPFiles/"
-    savePath 
+    savePath = config.PROCESSED_NUMPY_PATH 
     print("saved in : {}".format(savePath))
     np.save(savePath + "xAxis.npy", xaxis)
     np.save(savePath + "yAxis.npy", yaxis)
