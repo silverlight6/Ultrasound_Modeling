@@ -235,7 +235,7 @@ class VisionTransformer(tf.Module):
             tape.watch(self.visionModel.trainable_variables)
             logits, _ = self.forward(x)
             smce = self.compute_loss(y_true=y, y_pred=logits)
-            # smce += sum(self.visionModel.losses)
+            # smce += sum(self.visionModel.losses)                     // uncomment if use weight decay
         gradients = tape.gradient(smce, self.visionModel.trainable_variables)
         clip_gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
         self.optimizer.apply_gradients(zip(clip_gradients, self.visionModel.trainable_variables))
