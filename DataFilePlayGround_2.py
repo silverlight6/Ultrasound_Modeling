@@ -85,7 +85,6 @@ def FetchTimeData(datapath):
 
 def FetchPolarAxis(datapath, axisPath):
     Harmonics = loadmat(datapath)
-    print(Harmonics.keys())
 
     xaxis = np.array(list(Harmonics['xAxis']))
     yaxis = np.array(list(Harmonics['zAxis']))
@@ -96,9 +95,9 @@ def FetchPolarAxis(datapath, axisPath):
     xaxis += 100
     yaxis -= 4
 
-    print("saved in : {}".format(axisPath))
-    np.save(axisPath + "xAxis.npy", xaxis)
-    np.save(axisPath + "yAxis.npy", yaxis)
+    print("saved axis info in : {}".format(axisPath))
+    np.save(os.path.join(axisPath, "xAxis.npy"), xaxis)
+    np.save(os.path.join(axisPath, "yAxis.npy"), yaxis)
 
 
 def shift(image):
@@ -248,6 +247,22 @@ def dataAug(image):
 
  # objective indicates if the data for finding brain mask or bleed (0=brain, 1=bleed)
 def output2DImages(iteration, objective, rawDataPath, savePath):
+    # save the data used to identify brain/no brain
+    if (objective == 0):
+        dataFolder = os.path.join(savePath, "brainMask")
+    else:
+        # save the data used to identify blood
+        dataFolder = os.path.join(savePath, "blood")
+
+    # create folder to store processed data if not yet exists, else move on
+    try:
+        os.mkdir(dataFolder)
+    except OSError as error:
+        print(error)
+        if len(os.listdir(dataFolder)) != 0:
+            print(str(dataFolder) + " contains data. End of data processing")
+            return
+    
     # Make arrays for dividing data between training, testing, and validation.
     manager = multiprocessing.Manager()
 
@@ -470,19 +485,6 @@ def output2DImages(iteration, objective, rawDataPath, savePath):
     # print("validation {}".format(validationData.shape))
 
     print("saved in : {}".format(savePath))
-    
-    # save the data used to identify brain/no brain
-    if (objective == 0):
-        dataFolder = os.path.join(savePath, "brainMask")
-    else:
-        # save the data used to identify blood
-        dataFolder = os.path.join(savePath, "blood")
-
-    # create the directory if not exists else move on
-    try:
-        os.mkdir(dataFolder)
-    except OSError as error:
-        print(error)
 
     # save the data
     np.save(os.path.join(dataFolder, "TrainingData.npy"), trainingData)
@@ -496,14 +498,20 @@ if __name__ == '__main__':
     rawDataPath = config.RAW_DATA_PATH
     #path to saved processed data
     savePath = config.PROCESSED_NUMPY_PATH
+    # process data and label to identify brain / no brain
+    output2DImages(4, 0, rawDataPath, savePath)
+    # process data and labels to identify blood
     output2DImages(4, 1, rawDataPath, savePath)
-    
+
     # save data for displaying the ultrasound cone
     axisPath = os.path.join(config.PROCESSED_NUMPY_PATH, "axis")
     if not os.path.isdir(axisPath):
-        os.mkdir(axisPath)
-        rand_input_file = random.choice(os.listdir(os.path.join(config.RAW_DATA_PATH, "DoD001")))
-        rand_input_file = os.path.join(config.RAW_DATA_PATH, rand_input_file)
+        try:
+            os.mkdir(axisPath)
+        except OSError as error:
+            print(error)
+        rand_input_file = random.choice(os.listdir(os.path.join(rawDataPath, "DoD001")))
+        rand_input_file = os.path.join(rawDataPath, "DoD001", rand_input_file)
         FetchPolarAxis(rand_input_file, axisPath)
 
 
