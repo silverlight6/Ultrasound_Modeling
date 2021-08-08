@@ -433,7 +433,7 @@ def output2DImages(iteration, objective, rawDataPath, savePath):
     while count < pLength:
         processes = []
         while t < 10 and count < pLength:
-            fpath = os.path.join(dataPaths, pathlist[count])
+            fpath = os.path.join(rawDataPath, pathlist[count])
             patient_num = fpath[-3:]
             patient_num = int(patient_num)
             timeStart[count] = time.time()
