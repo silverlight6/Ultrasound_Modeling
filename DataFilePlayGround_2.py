@@ -1,6 +1,7 @@
 import numpy as np
 import config
 import os                           # reading files
+import random
 import cv2                          # resize
 import math
 import cmath
@@ -82,7 +83,7 @@ def FetchTimeData(datapath):
     return combinedData
 
 
-def FetchPolarAxis(datapath):
+def FetchPolarAxis(datapath, axisPath):
     Harmonics = loadmat(datapath)
     print(Harmonics.keys())
 
@@ -95,10 +96,9 @@ def FetchPolarAxis(datapath):
     xaxis += 100
     yaxis -= 4
 
-    savePath = config.PROCESSED_NUMPY_PATH 
-    print("saved in : {}".format(savePath))
-    np.save(savePath + "xAxis.npy", xaxis)
-    np.save(savePath + "yAxis.npy", yaxis)
+    print("saved in : {}".format(axisPath))
+    np.save(axisPath + "xAxis.npy", xaxis)
+    np.save(axisPath + "yAxis.npy", yaxis)
 
 
 def shift(image):
@@ -246,8 +246,8 @@ def dataAug(image):
     # plt.show()
     return image
 
-
-def output2DImages(iteration):
+ # objective indicates if the data for finding brain mask or bleed (0=brain, 1=bleed)
+def output2DImages(iteration, objective, rawDataPath, savePath):
     # Make arrays for dividing data between training, testing, and validation.
     manager = multiprocessing.Manager()
 
@@ -423,13 +423,8 @@ def output2DImages(iteration):
         # print("in fileloop - {}".format(trainingData))
         return
 
-    # data paths; it is just what it sounds like
-    # watch out for polar versus non-polar
-    dataPaths = config.RAW_DATA_PATH
-
     # make sure that data gets looked at even
-
-    pathlist = os.listdir(dataPaths)
+    pathlist = os.listdir(rawDataPath)
     pathlist = np.sort(pathlist)
     pathlist = shuffle(pathlist, random_state=20)
     t = 0
@@ -443,7 +438,7 @@ def output2DImages(iteration):
             patient_num = int(patient_num)
             timeStart[count] = time.time()
             if patient_num not in bad_patients:
-                p = multiprocessing.Process(target=fileLoop, args=(fpath, patient_num, iteration, 1, 0))
+                p = multiprocessing.Process(target=fileLoop, args=(fpath, patient_num, iteration, 1, objective))
                 p.start()
                 processes.append(p)
             count += 1
@@ -474,19 +469,35 @@ def output2DImages(iteration):
     print("testing {}".format(testingData.shape))
     # print("validation {}".format(validationData.shape))
 
-    savePath = config.PROCESSED_NUMPY_PATH
     print("saved in : {}".format(savePath))
-    np.save(savePath + "TrainingData.npy", trainingData)
-    np.save(savePath + "TestingData.npy", testingData)
-    # np.save(savePath + "ValidationData.npy", validationData)
-    np.save(savePath + "TrainingPaths.npy", trainingPaths)
-    np.save(savePath + "TestingPaths.npy", testingPaths)
-    # np.save(savePath + "ValidationPaths.npy", validationPaths)
+    
+    # save the data used to identify brain/no brain
+    if (objective == 0):
+        dataFolder = os.path.join(savePath, "brainMask")
+    else:
+        # save the data used to identify blood
+        dataFolder = os.path.join(savePath, "blood")
+    
+    # save the data
+    np.save(os.path.join(dataFolder, "TrainingData.npy"), trainingData)
+    np.save(os.path.join(dataFolder, "TestingData.npy"), testingData)
+    np.save(os.path.join(dataFolder, "TrainingPaths.npy"), trainingPaths)
+    np.save(os.path.join(dataFolder, "TestingPaths.npy"), testingPaths)
 
 
 if __name__ == '__main__':
-    output2DImages(4)
-    # FetchPolarAxis('/home/silver/TBI/CardiacData/DoD001/DoD001_Ter001_RC1_Displacement_Normalized_2.mat')
+    # path to raw data
+    rawDataPath = config.RAW_DATA_PATH
+    #path to saved processed data
+    savePath = config.PROCESSED_NUMPY_PATH
+    output2DImages(4, 1, rawDataPath, savePath)
+    
+    # save data for displaying the ultrasound cone
+    axisPath = os.path.join(config.PROCESSED_NUMPY_PATH, "axis")
+    if not os.path.isdir(axisPath):
+        rand_input_file = random.choice(os.listdir(os.path.join(config.RAW_DATA_PATH, "DoD001")))
+        rand_input_file = os.path.join(config.RAW_DATA_PATH, rand_input_file)
+        FetchPolarAxis(rand_input_file, axisPath)
 
 
 # FetchTimeData('/data/TBI/Datasets/PolarData/DoD001/DoD001_Ter001_RC1_Harmonics_Polar.mat')
