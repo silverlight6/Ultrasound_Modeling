@@ -1,3 +1,5 @@
+# Source: https://github.com/rishigami/Swin-Transformer-TF/blob/main/swintransformer/model.py
+
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import Dense, Dropout, Conv2D, LayerNormalization, GlobalAveragePooling1D
