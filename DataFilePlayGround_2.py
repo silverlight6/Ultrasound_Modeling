@@ -477,7 +477,13 @@ def output2DImages(iteration, objective, rawDataPath, savePath):
     else:
         # save the data used to identify blood
         dataFolder = os.path.join(savePath, "blood")
-    
+
+    # create the directory if not exists else move on
+    try:
+        os.mkdir(dataFolder)
+    except OSError as error:
+        print(error)
+
     # save the data
     np.save(os.path.join(dataFolder, "TrainingData.npy"), trainingData)
     np.save(os.path.join(dataFolder, "TestingData.npy"), testingData)
@@ -495,6 +501,7 @@ if __name__ == '__main__':
     # save data for displaying the ultrasound cone
     axisPath = os.path.join(config.PROCESSED_NUMPY_PATH, "axis")
     if not os.path.isdir(axisPath):
+        os.mkdir(axisPath)
         rand_input_file = random.choice(os.listdir(os.path.join(config.RAW_DATA_PATH, "DoD001")))
         rand_input_file = os.path.join(config.RAW_DATA_PATH, rand_input_file)
         FetchPolarAxis(rand_input_file, axisPath)
