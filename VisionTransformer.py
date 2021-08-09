@@ -1,5 +1,5 @@
 import tensorflow as tf
-import tensorflow_addons as tfa
+# import tensorflow_addons as tfa
 from ResNest import ResNest
 from Decoder import DecoderCup
 
@@ -96,7 +96,8 @@ class Embeddings(tf.Module):
         # # use a transfer learning network.
         # self.hybrid_model = ResNetV2(block_units=(3, 4, 9), width_factor=1)
         self.hybrid_model = ResNest(256, 80, 10, radix=3, ksize=3, kpaths=3)
-
+        # self.hybrid_model = SwinTransformer(model_name='swin_large_patch4_window7_384', img_size=self.img_size,
+        #                                     in_chans=10)
         # Try using a reshape instead of a convolution later on.
         # self.patch_embeddings = tf.keras.layers.Conv2D(filters=hidden_size, kernel_size=patch_size, padding='same',
         #                                                strides=patch_size, kernel_regularizer=wDecay)
@@ -234,7 +235,7 @@ class VisionTransformer(tf.Module):
             tape.watch(self.visionModel.trainable_variables)
             logits, _ = self.forward(x)
             smce = self.compute_loss(y_true=y, y_pred=logits)
-            # smce += sum(self.visionModel.losses)
+            # smce += sum(self.visionModel.losses)                     // uncomment if use weight decay
         gradients = tape.gradient(smce, self.visionModel.trainable_variables)
         clip_gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
         self.optimizer.apply_gradients(zip(clip_gradients, self.visionModel.trainable_variables))

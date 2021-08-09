@@ -24,3 +24,4 @@ Checkpoint/
 *.png
 killCommand
 __pycache__/
+.env

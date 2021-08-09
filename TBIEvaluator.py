@@ -1,12 +1,13 @@
 import numpy as np
 import tensorflow as tf
-import tensorflow_addons as tfa
+# import tensorflow_addons as tfa
 import matplotlib
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, use
 # from sklearn.metrics import confusion_matrix
 import datetime
 import os
 import multiprocessing
+import config
 
 patientNum = "099"
 scanNum = "007"
@@ -15,8 +16,8 @@ savePath = "/home/silver/TBI/Pictures/"
 image_num = 0
 countx = 0
 county = 0
-xAxisPath = '/home/silver/TBI/NPFiles/xAxis.npy'
-yAxisPath = '/home/silver/TBI/NPFiles/yAxis.npy'
+xAxisPath = os.path.join(config.PROCESSED_NUMPY_PATH, 'axis/xAxis.npy')
+yAxisPath = os.path.join(config.PROCESSED_NUMPY_PATH, 'axis/yAxis.npy')
 xAxis = np.load(xAxisPath)
 yAxis = np.load(yAxisPath)
 xAxis = xAxis.astype(int)
@@ -159,10 +160,21 @@ def Cardiac_Model():
     print(tmpcnt)
 
 
-def Polar_Model(sAll=False):
+def Polar_Model(sAll=False, use_brainMask=False):
     global image_num
-    dataPath_m = '/home/silver/TBI/NPFiles/Disp/TestingData.npy'
-    pathNames_path = '/home/silver/TBI/NPFiles/Disp/TestingPaths.npy'
+
+    # if use the model to produce brain mask
+    if use_brainMask:
+        path_to_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'brainMask')
+
+    else:
+        # if use the brain mask from CT scans
+        path_to_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'blood')
+
+    # get path to processed test data
+    dataPath_m = os.path.join(path_to_data, 'TestingData.npy')
+    pathNames_path = os.path.join(path_to_data, 'TestingPaths.npy')
+
     data_m = np.load(dataPath_m)
     pathNames = np.load(pathNames_path)
     if not sAll:
@@ -181,7 +193,8 @@ def Polar_Model(sAll=False):
                     break
                 image_num = i
                 [testX, testY, bMode] = preProcess1(data_m, xdim=256, ydim=80)
-                p = multiprocessing.Process(target=PolarProcess, args=(testX, testY, pathNames[i], bMode))
+                p = multiprocessing.Process(target=PolarProcess, args=(testX, testY, pathNames[i], 
+                                                                       use_brainMask, bMode))
                 p.start()
                 processes.append(p)
                 print("Process Create")
@@ -192,27 +205,33 @@ def Polar_Model(sAll=False):
         print(tmpcnt)
 
 
-def PolarProcess(testX, testY, name, bMode=None, paths=None):
+def PolarProcess(testX, testY, name, use_brainMask=False ,bMode=None, paths=None):
 
-    # DispInput(testX)
-    SegNet = tf.keras.models.load_model("/home/silver/TBI/Models/ResNeSt_T0",
-                                        custom_objects={'my_loss_cat': my_loss_cat,
-                                                        'add_ons>AdamW': tfa.optimizers.AdamW})
+    # DispInput(testX) # display the input images
+
     # SegNet = tf.keras.models.load_model("/TBI/Models/Transformer_1")
     # prob = SegNet({"imp0": tf.expand_dims(testX[0, :, :, :], 0), "imp1": tf.expand_dims(testX[1, :, :, :], 0),
     #                "imp2": tf.expand_dims(testX[2, :, :, :], 0), "imp3": tf.expand_dims(testX[3, :, :, :], 0),
     #                "imp4": tf.expand_dims(testX[4, :, :, :], 0), "imp5": tf.expand_dims(testX[5, :, :, :], 0),
     #                "imp6": tf.expand_dims(testX[6, :, :, :], 0), "imp7": tf.expand_dims(testX[7, :, :, :], 0),
     #                "imp8": tf.expand_dims(testX[8, :, :, :], 0), "imp9": tf.expand_dims(testX[9, :, :, :], 0)})
-    # Next 6 lines are for using the model generated model.
-    # mask, _ = SegNet(testX)
-    # mask = np.array(mask)
-    # mask = np.round(mask)
-    # for i in range(0, 10):
-    #     testX[:, :, :, i] = np.where(mask[0, :, :, 0] == 1, 0.0, testX[:, :, :, i])
-    # SegNet = tf.keras.models.load_model("/home/silver/TBI/Models/ResNeSt_T1-9",
-    #                                     custom_objects={'my_loss_cat': my_loss_cat,
-    #                                                     'add_ons>AdamW': tfa.optimizers.AdamW})
+    
+    if use_brainMask:
+        # using the model that generates brain mask
+        SegNet = tf.keras.models.load_model(os.path.join(config.TRAINED_MODELS_PATH, "ResNeSt_T1M-9"),
+                                        custom_objects={'my_loss_cat': my_loss_cat})
+        mask, _ = SegNet(testX)
+        mask = np.array(mask)
+        mask = np.round(mask)
+        for i in range(0, 10):
+            testX[:, :, :, i] = np.where(mask[0, :, :, 0] == 1, 0.0, testX[:, :, :, i])
+        SegNet = tf.keras.models.load_model(os.path.join(config.TRAINED_MODELS_PATH, "ResNeSt_T1-9"),
+                                            custom_objects={'my_loss_cat': my_loss_cat})
+                                                            # 'add_ons>AdamW': tfa.optimizers.AdamW})
+    else:
+        # when using the brain mask from CT scan
+        SegNet = tf.keras.models.load_model(os.path.join(config.TRAINED_MODELS_PATH, "ResNeSt_T1-9"),
+                                        custom_objects={'my_loss_cat': my_loss_cat})
 
     prob, _ = SegNet(testX)
     probOut = prob[:, :, :, -1]
@@ -351,7 +370,7 @@ def checkCount(name="name"):
 
 
 # Cardiac_Model()
-Polar_Model(sAll=True)
+Polar_Model(sAll=True, use_brainMask=False)
 # CT_Derived_Model()
 # segNet_Transfer_Model()
 # Split_Model()

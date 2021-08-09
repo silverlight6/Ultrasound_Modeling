@@ -1,5 +1,6 @@
 import tensorflow as tf
 import datetime
+import config
 import os
 from Dataset_2 import Dataset
 from VisionTransformer import VisionTransformer
@@ -146,8 +147,8 @@ class Process(object):
 
 def main():
     # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-    train_data = '/home/silver/TBI/NPFiles/Disp/TrainingData.npy'
-    val_data = '/home/silver/TBI/NPFiles/Disp/TestingData.npy'
+    train_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'TrainingData.npy')
+    val_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'TestingData.npy')
     num_class = 3
     dataset = Dataset(train_data, val_data, num_class)
     # config = tf.estimator.RunConfig(train_distribute=mirrored_strategy)
@@ -161,7 +162,7 @@ def main():
     print(len(neuralnet.visionModel.layers))
     process = Process(batch_size=batch_size, num_classes=num_class)
     process.training(neuralnet=neuralnet, dataset=dataset, epochs=51)
-    neuralnet.visionModel.save('/home/silver/TBI/Models/ResNeSt_T0')
+    neuralnet.visionModel.save(os.path.join(config.TRAINED_MODELS_PATH, 'ResNeSt_T0'))
 
 
 if __name__ == '__main__':

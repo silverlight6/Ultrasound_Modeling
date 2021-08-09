@@ -1,6 +1,7 @@
 import numpy as np
 import config
 import os                           # reading files
+import random
 import cv2                          # resize
 import math
 import cmath
@@ -82,9 +83,8 @@ def FetchTimeData(datapath):
     return combinedData
 
 
-def FetchPolarAxis(datapath):
+def FetchPolarAxis(datapath, axisPath):
     Harmonics = loadmat(datapath)
-    print(Harmonics.keys())
 
     xaxis = np.array(list(Harmonics['xAxis']))
     yaxis = np.array(list(Harmonics['zAxis']))
@@ -95,11 +95,9 @@ def FetchPolarAxis(datapath):
     xaxis += 100
     yaxis -= 4
 
-    savePath = "/home/silver/TBI/NPFiles/"
-    savePath 
-    print("saved in : {}".format(savePath))
-    np.save(savePath + "xAxis.npy", xaxis)
-    np.save(savePath + "yAxis.npy", yaxis)
+    print("saved axis info in : {}".format(axisPath))
+    np.save(os.path.join(axisPath, "xAxis.npy"), xaxis)
+    np.save(os.path.join(axisPath, "yAxis.npy"), yaxis)
 
 
 def shift(image):
@@ -247,8 +245,24 @@ def dataAug(image):
     # plt.show()
     return image
 
+ # objective indicates if the data for finding brain mask or bleed (0=brain, 1=bleed)
+def output2DImages(iteration, objective, rawDataPath, savePath):
+    # save the data used to identify brain/no brain
+    if (objective == 0):
+        dataFolder = os.path.join(savePath, "brainMask")
+    else:
+        # save the data used to identify blood
+        dataFolder = os.path.join(savePath, "blood")
 
-def output2DImages(iteration):
+    # create folder to store processed data if not yet exists, else move on
+    try:
+        os.mkdir(dataFolder)
+    except OSError as error:
+        print(error)
+        if len(os.listdir(dataFolder)) != 0:
+            print(str(dataFolder) + " contains data. End of data processing")
+            return
+    
     # Make arrays for dividing data between training, testing, and validation.
     manager = multiprocessing.Manager()
 
@@ -268,7 +282,8 @@ def output2DImages(iteration):
     # counting files
     count = 0
 
-    def fileLoop(path, patient_num, iteration, mode):
+    # objective indicates if the data for finding brain mask or bleed (0=brain, 1=bleed)
+    def fileLoop(path, patient_num, iteration, mode, objective):
         iteration = iteration % 10
         for file in os.listdir(path):
             if ".mat" in file:
@@ -312,18 +327,22 @@ def output2DImages(iteration):
                 bMode = np.log10(bMode)
 
                 # Smooth & Create the Label
-                # label = np.where(bloodMask > normalMask, 2, 1)
-                # label = label.astype('float32')
-                # label = cv2.GaussianBlur(src=label, ksize=(9, 9), sigmaX=4)
-                # label = np.where(bloodMask > normalMask, 2, label)
-                # label = cv2.GaussianBlur(src=label, ksize=(3, 3), sigmaX=2)
-                # label = np.where(bloodMask > normalMask, 2, label)
-                # label = cv2.resize(label, (80, 256))
                 brainMask = cv2.resize(brainMask, (80, 256))
-                # label = np.where(brainMask == 0, 0, label)
-                # # This code is for finding the mask
-                label = np.where(brainMask == 0, 0, 1)
-                # label = label.reshape([256, 80, 1])
+                if (objective == 0):
+                    # This code is for finding the brain mask
+                    label = np.where(brainMask == 0, 0, 1)
+                else:
+                    # Finding the blood, brain, and outside brain masks
+                    label = np.where(bloodMask > normalMask, 2, 1)
+                    label = label.astype('float32')
+                    label = cv2.GaussianBlur(src=label, ksize=(9, 9), sigmaX=4)
+                    label = np.where(bloodMask > normalMask, 2, label)
+                    label = cv2.GaussianBlur(src=label, ksize=(3, 3), sigmaX=2)
+                    label = np.where(bloodMask > normalMask, 2, label)
+                    label = cv2.resize(label, (80, 256))
+                    label = np.where(brainMask == 0, 0, label)
+                
+                label = label.reshape([256, 80, 1])
                 cycles = real.shape[-1]
                 real = real.astype('float64')
                 imag = imag.astype('float64')
@@ -362,10 +381,11 @@ def output2DImages(iteration):
                     bModeO = cv2.resize(bModeO, (80, 256))
                     # tOutput = cv2.resize(tOutput, (80, 256), interpolation=cv2.INTER_CUBIC)
 
-                    # delete non-brain from input data
-                    for i in range(0, realO.shape[-1]):
-                        realO[:, :, i] = np.where(brainMask == 0, 0.0, realO[:, :, i])
-                        imagO[:, :, i] = np.where(brainMask == 0, 0.0, imagO[:, :, i])
+                    if (objective == 1):
+                        # delete non-brain from input data
+                        for i in range(0, realO.shape[-1]):
+                            realO[:, :, i] = np.where(brainMask == 0, 0.0, realO[:, :, i])
+                            imagO[:, :, i] = np.where(brainMask == 0, 0.0, imagO[:, :, i])
 
                     bModeO = bModeO.reshape([256, 80, 1])
 
@@ -418,13 +438,8 @@ def output2DImages(iteration):
         # print("in fileloop - {}".format(trainingData))
         return
 
-    # data paths; it is just what it sounds like
-    # watch out for polar versus non-polar
-    dataPaths = config.RAW_DATA_PATH
-
     # make sure that data gets looked at even
-
-    pathlist = os.listdir(dataPaths)
+    pathlist = os.listdir(rawDataPath)
     pathlist = np.sort(pathlist)
     pathlist = shuffle(pathlist, random_state=20)
     t = 0
@@ -433,12 +448,12 @@ def output2DImages(iteration):
     while count < pLength:
         processes = []
         while t < 10 and count < pLength:
-            fpath = os.path.join(dataPaths, pathlist[count])
+            fpath = os.path.join(rawDataPath, pathlist[count])
             patient_num = fpath[-3:]
             patient_num = int(patient_num)
             timeStart[count] = time.time()
             if patient_num not in bad_patients:
-                p = multiprocessing.Process(target=fileLoop, args=(fpath, patient_num, iteration, 1))
+                p = multiprocessing.Process(target=fileLoop, args=(fpath, patient_num, iteration, 1, objective))
                 p.start()
                 processes.append(p)
             count += 1
@@ -469,19 +484,35 @@ def output2DImages(iteration):
     print("testing {}".format(testingData.shape))
     # print("validation {}".format(validationData.shape))
 
-    savePath = config.PROCESSED_NUMPY
     print("saved in : {}".format(savePath))
-    np.save(savePath + "TrainingData.npy", trainingData)
-    np.save(savePath + "TestingData.npy", testingData)
-    # np.save(savePath + "ValidationData.npy", validationData)
-    np.save(savePath + "TrainingPaths.npy", trainingPaths)
-    np.save(savePath + "TestingPaths.npy", testingPaths)
-    # np.save(savePath + "ValidationPaths.npy", validationPaths)
+
+    # save the data
+    np.save(os.path.join(dataFolder, "TrainingData.npy"), trainingData)
+    np.save(os.path.join(dataFolder, "TestingData.npy"), testingData)
+    np.save(os.path.join(dataFolder, "TrainingPaths.npy"), trainingPaths)
+    np.save(os.path.join(dataFolder, "TestingPaths.npy"), testingPaths)
 
 
 if __name__ == '__main__':
-    output2DImages(4)
-    # FetchPolarAxis('/home/silver/TBI/CardiacData/DoD001/DoD001_Ter001_RC1_Displacement_Normalized_2.mat')
+    # path to raw data
+    rawDataPath = config.RAW_DATA_PATH
+    #path to saved processed data
+    savePath = config.PROCESSED_NUMPY_PATH
+    # process data and label to identify brain / no brain
+    output2DImages(4, 0, rawDataPath, savePath)
+    # process data and labels to identify blood
+    output2DImages(4, 1, rawDataPath, savePath)
+
+    # save data for displaying the ultrasound cone
+    axisPath = os.path.join(config.PROCESSED_NUMPY_PATH, "axis")
+    if not os.path.isdir(axisPath):
+        try:
+            os.mkdir(axisPath)
+        except OSError as error:
+            print(error)
+        rand_input_file = random.choice(os.listdir(os.path.join(rawDataPath, "DoD001")))
+        rand_input_file = os.path.join(rawDataPath, "DoD001", rand_input_file)
+        FetchPolarAxis(rand_input_file, axisPath)
 
 
 # FetchTimeData('/data/TBI/Datasets/PolarData/DoD001/DoD001_Ter001_RC1_Harmonics_Polar.mat')
