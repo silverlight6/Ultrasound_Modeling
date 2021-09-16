@@ -10,3 +10,5 @@ RAW_DATA_PATH = str(os.getenv("RAW_DATA_PATH"))
 PROCESSED_NUMPY_PATH = str(os.getenv("PROCESSED_NUMPY_PATH"))
 # Path to trained models
 TRAINED_MODELS_PATH = str(os.getenv("TRAINED_MODELS_PATH"))
+# Path to saved inference results
+INFERENCE_PATH = str(os.getenv("INFERENCE_PATH"))

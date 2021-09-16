@@ -146,23 +146,33 @@ class Process(object):
 
 
 def main():
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-    train_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'TrainingData.npy')
-    val_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'TestingData.npy')
-    num_class = 3
-    dataset = Dataset(train_data, val_data, num_class)
+    # number of classes in the model
+    num_classes = 2
+
+    if num_classes == 2:
+        train_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'brainMask','TrainingData.npy')
+        val_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'brainMask','TestingData.npy')
+        saved_model_path = os.path.join(config.TRAINED_MODELS_PATH, 'ResNeSt_brainMask')
+    else:
+        train_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'blood','TrainingData.npy')
+        val_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'blood','TestingData.npy')
+        saved_model_path = os.path.join(config.TRAINED_MODELS_PATH, 'ResNeSt_T0')
+
+    dataset = Dataset(train_data, val_data, num_classes)
     # config = tf.estimator.RunConfig(train_distribute=mirrored_strategy)
     # with mirrored_strategy.scope():
     batch_size = 32
-    neuralnet = VisionTransformer(batch_size, num_classes=num_class)
+    neuralnet = VisionTransformer(batch_size, num_classes=num_classes)
 
     # tf.keras.utils.model_to_dot(neuralnet.visionModel, to_file='TransUNet_dot.png', show_shapes=True)
 
     # print(neuralnet.visionModel.summary())
     print(len(neuralnet.visionModel.layers))
-    process = Process(batch_size=batch_size, num_classes=num_class)
+    process = Process(batch_size=batch_size, num_classes=num_classes)
     process.training(neuralnet=neuralnet, dataset=dataset, epochs=51)
-    neuralnet.visionModel.save(os.path.join(config.TRAINED_MODELS_PATH, 'ResNeSt_T0'))
+
+    # save the model
+    neuralnet.visionModel.save(saved_model_path)
 
 
 if __name__ == '__main__':

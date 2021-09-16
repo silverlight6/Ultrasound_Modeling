@@ -1,4 +1,5 @@
 import numpy as np
+import config
 import os                           # reading files
 import cv2                          # resize
 import math
@@ -127,7 +128,7 @@ def output2DImages(iteration):
 
     # data paths; it is just what it sounds like
     # watch out for polar versus non-polar
-    dataPaths = "/home/silver/TBI/CardiacData_3/"
+    dataPaths = config.RAW_DATA_PATH
 
     # make sure that data gets looked at even
 
@@ -144,7 +145,7 @@ def output2DImages(iteration):
             patient_num = fpath[-3:]
             patient_num = int(patient_num)
             timeStart[count] = time.time()
-            if patient_num not in bad_patients:
+            if patient_num not in bad_patients and patient_num in IPH_patients:
                 p = multiprocessing.Process(target=fileLoop, args=(fpath, patient_num, iteration, 1))
                 p.start()
                 processes.append(p)
@@ -171,12 +172,12 @@ def output2DImages(iteration):
     print("training {}".format(trainingData.shape))
     print("testing {}".format(testingData.shape))
 
-    savePath = "/home/silver/TBI/NPFiles/Disp3D/"
+    savePath = os.path.join(config.PROCESSED_NUMPY_PATH, 'pizza_IPH')
     print("saved in : {}".format(savePath))
-    np.save(savePath + "TrainingData.npy", trainingData)
-    np.save(savePath + "TestingData.npy", testingData)
-    np.save(savePath + "TrainingPaths.npy", trainingPaths)
-    np.save(savePath + "TestingPaths.npy", testingPaths)
+    np.save(os.path.join(savePath, "TrainingData.npy"), trainingData)
+    np.save(os.path.join(savePath, "TestingData.npy"), testingData)
+    np.save(os.path.join(savePath, "TrainingPaths.npy"), trainingPaths)
+    np.save(os.path.join(savePath, "TestingPaths.npy"), testingPaths)
 
 
 if __name__ == '__main__':

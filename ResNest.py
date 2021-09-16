@@ -16,11 +16,11 @@ class ResNest(tf.Module):
         self.conv1_act = tf.keras.layers.LeakyReLU()
         self.convtmp_1 = tf.keras.layers.Conv2D(32, 3, strides=1, padding='SAME', kernel_regularizer=self.wDecay,
                                                 kernel_initializer=tf.keras.initializers.HeNormal(),)
-        self.convtmp_1bn = tf.keras.layers.experimental.SyncBatchNormalization()
+        self.convtmp_1bn = tf.keras.layers.BatchNormalization()      # multiple GPU. CHnage to BatchNormalization if not use multiple GPU
         self.convtmp_1act = tf.keras.layers.LeakyReLU()
         self.convtmp_2 = tf.keras.layers.Conv2D(32, 3, strides=1, padding='SAME', kernel_regularizer=self.wDecay,
                                                 kernel_initializer=tf.keras.initializers.HeNormal(),)
-        self.convtmp_2bn = tf.keras.layers.experimental.SyncBatchNormalization()
+        self.convtmp_2bn = tf.keras.layers.BatchNormalization()     # multiple GPU. CHnage to BatchNormalization if not use multiple GPU
         self.convtmp_2act = tf.keras.layers.LeakyReLU()
         self.conv1_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2)
         self.conv2_pool = tf.keras.layers.AveragePooling2D(pool_size=2, strides=2)

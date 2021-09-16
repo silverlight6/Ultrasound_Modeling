@@ -3,23 +3,26 @@ import numpy as np
 from DataAugs import dataAug
 
 
-def label2vec(label):
-    class_2 = np.where(label >= 1.05, label - 1, 0)
-    class_2 = np.where(class_2 > 1, 1, class_2)
-    class_1 = np.expand_dims(np.where(label > 0.95, 1 - class_2, 0), axis=3)
-    class_0 = np.expand_dims(np.where(label <= 0.95, 1, 0), axis=3)
-    class_2 = np.expand_dims(class_2, axis=3)
-    label = np.concatenate((class_0, class_1, class_2), axis=3)
-    # # This code is if you only have 2 classes. First class is equal to the label and the second class is the inverse
-    # class_1 = label
-    # class_0 = 1 - label
-    # label = np.concatenate((class_0, class_1), axis=3)
+def label2vec(label, num_classes):
+    if num_classes == 3:
+        class_2 = np.where(label >= 1.05, label - 1, 0)
+        class_2 = np.where(class_2 > 1, 1, class_2)
+        class_1 = np.expand_dims(np.where(label > 0.95, 1 - class_2, 0), axis=3)
+        class_0 = np.expand_dims(np.where(label <= 0.95, 1, 0), axis=3)
+        class_2 = np.expand_dims(class_2, axis=3)
+        label = np.concatenate((class_0, class_1, class_2), axis=3)
+    else:
+        class_1 = label
+        class_0 = 1 - label
+        class_0 = np.expand_dims(class_0, axis=3)
+        class_1 = np.expand_dims(class_1, axis=3)
+        label = np.concatenate((class_0, class_1), axis=3)
     return label
 
 
 class Dataset(object):
 
-    def __init__(self, train_path=None, val_path=None, num_class=3):
+    def __init__(self, train_path=None, val_path=None, num_classes=3):
 
         print("\nInitializing Dataset...")
         train_data = np.load(train_path, allow_pickle=True)
@@ -65,12 +68,12 @@ class Dataset(object):
 
         self.min_val, self.max_val = x_sample.min(), x_sample.max()
         # self.num_class = int(np.floor(y_te.max()+1))
-        self.num_class = 3
+        self.num_classes = num_classes
 
         print("Information of data")
         print("Shape  Height: %d, Width: %d, Channel: %d" % (self.height, self.width, self.channel))
         print("Value  Min: %.3f, Max: %.3f" % (self.min_val, self.max_val))
-        print("Class  %d" % self.num_class)
+        print("Class  %d" % self.num_classes)
 
     # This is converting the labels from 1d to 3d probability maps
     # 1.05 because resize can sometimes change values up and down by about .01 at any given pixel
@@ -106,7 +109,7 @@ class Dataset(object):
         for i in range(0, trShape[0]):
             x_tr[i, :, :, :], y_tr[i, :, :] = dataAug(x_tr[i, :, :, :], y_tr[i, :, :])
 
-        y_tr = label2vec(y_tr)
+        y_tr = label2vec(y_tr, self.num_classes)
         y_tr = tf.convert_to_tensor(y_tr, dtype=tf.float32)
         return x_tr, y_tr, terminator
 
@@ -126,6 +129,6 @@ class Dataset(object):
         if x_te.shape[0] != batch_size:
             x_te, y_te = self.x_te[-1-batch_size:-1], self.y_te[-1-batch_size:-1]
 
-        y_te = label2vec(y_te)
+        y_te = label2vec(y_te, self.num_classes)
         y_te = tf.convert_to_tensor(y_te, dtype=tf.float32)
         return x_te, y_te, terminator

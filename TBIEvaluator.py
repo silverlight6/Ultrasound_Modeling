@@ -12,7 +12,7 @@ import config
 patientNum = "099"
 scanNum = "007"
 scanType = "RO3"
-savePath = "/home/silver/TBI/Pictures/"
+savePath = config.INFERENCE_PATH
 image_num = 0
 countx = 0
 county = 0
@@ -218,19 +218,19 @@ def PolarProcess(testX, testY, name, use_brainMask=False ,bMode=None, paths=None
     
     if use_brainMask:
         # using the model that generates brain mask
-        SegNet = tf.keras.models.load_model(os.path.join(config.TRAINED_MODELS_PATH, "ResNeSt_T1M-9"),
+        SegNet = tf.keras.models.load_model(os.path.join(config.TRAINED_MODELS_PATH, "ResNeSt_brainMask"),
                                         custom_objects={'my_loss_cat': my_loss_cat})
         mask, _ = SegNet(testX)
         mask = np.array(mask)
         mask = np.round(mask)
         for i in range(0, 10):
             testX[:, :, :, i] = np.where(mask[0, :, :, 0] == 1, 0.0, testX[:, :, :, i])
-        SegNet = tf.keras.models.load_model(os.path.join(config.TRAINED_MODELS_PATH, "ResNeSt_T1-9"),
+        SegNet = tf.keras.models.load_model(os.path.join(config.TRAINED_MODELS_PATH, "ResNeSt_T0"),
                                             custom_objects={'my_loss_cat': my_loss_cat})
                                                             # 'add_ons>AdamW': tfa.optimizers.AdamW})
     else:
         # when using the brain mask from CT scan
-        SegNet = tf.keras.models.load_model(os.path.join(config.TRAINED_MODELS_PATH, "ResNeSt_T1-9"),
+        SegNet = tf.keras.models.load_model(os.path.join(config.TRAINED_MODELS_PATH, "ResNeSt_T0"),
                                         custom_objects={'my_loss_cat': my_loss_cat})
 
     prob, _ = SegNet(testX)
@@ -262,9 +262,9 @@ def DispInput(x):
         tempx = x[:, :, :, i]
         plt.grid(False)
         plt.imshow(tempx, cmap='winter')
-        path = savePath + datetime.datetime.now().strftime("%m%d-%H") + "/" + '2layer ' + str(i) + ".png"
-        if not os.path.isdir(savePath + datetime.datetime.now().strftime("%m%d-%H")):
-            os.mkdir(savePath + datetime.datetime.now().strftime("%m%d-%H"))
+        path = savePath + '/' + datetime.datetime.now().strftime("%m%d-%H") + "/" + '2layer ' + str(i) + ".png"
+        if not os.path.isdir(savePath + '/' + datetime.datetime.now().strftime("%m%d-%H")):
+            os.mkdir(savePath + '/' + datetime.datetime.now().strftime("%m%d-%H"))
         if not os.path.isfile(path):
             plt.savefig(path)
         # plt.show()
@@ -340,9 +340,9 @@ def Display(prob=None, true=None, mask=None, confusion=None, name="True", numDim
         checkCount(name)
         dispDict["bMode"] = False
 
-    path = savePath + datetime.datetime.now().strftime("%m%d-%H") + "/" + str(name) + ".png"
-    if not os.path.isdir(savePath + datetime.datetime.now().strftime("%m%d-%H")):
-        os.mkdir(savePath + datetime.datetime.now().strftime("%m%d-%H"))
+    path = savePath + '/' + datetime.datetime.now().strftime("%m%d-%H") + "/" + str(name) + ".png"
+    if not os.path.isdir(savePath + '/' + datetime.datetime.now().strftime("%m%d-%H")):
+        os.mkdir(savePath + '/' + datetime.datetime.now().strftime("%m%d-%H"))
     if not os.path.isfile(path):
         print(name)
         plt.savefig(path)
@@ -359,9 +359,9 @@ def checkCount(name="name"):
     if countx == 2:
         county += 1
         if county == 2:
-            path = savePath + datetime.datetime.now().strftime("%m%d-%H") + "/" + str(name) + ".png"
-            if not os.path.isdir(savePath + datetime.datetime.now().strftime("%m%d-%H")):
-                os.mkdir(savePath + datetime.datetime.now().strftime("%m%d-%H"))
+            path = savePath + '/' + datetime.datetime.now().strftime("%m%d-%H") + "/" + str(name) + ".png"
+            if not os.path.isdir(savePath + '/' +  datetime.datetime.now().strftime("%m%d-%H")):
+                os.mkdir(savePath + '/' + datetime.datetime.now().strftime("%m%d-%H"))
             plt.savefig(path)
             # plt.show()
             plt.close()
