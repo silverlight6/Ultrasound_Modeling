@@ -81,6 +81,7 @@ def preProcess1(input_data, xdim=160, ydim=192):
     y = np.array(y)
     y = y.reshape([xdim, ydim])
     x = x.reshape([1, xdim, ydim, -1])
+    print("x shape:", x.shape)
     return x, y, bMode
 
 
@@ -96,28 +97,6 @@ def preProcess2(input_data, xdim=256, ydim=80):
     return x_tr, y_tr
 
 
-def CardiacPreProcess(input_data, xdim=256, ydim=80, paths=None):
-    global image_num
-    t_x = []
-    t_p = []
-    t_y = input_data[image_num, :, :, 0]
-    t_x.append(input_data[image_num, :, :, 1:16])
-    t_p.append(paths[image_num])
-    path = paths[image_num]
-    image_num += 1
-    while path == paths[image_num]:
-        t_x.append(input_data[image_num, :, :, 1:16])
-        t_p.append(paths[image_num])
-        image_num += 1
-    t_x = np.array(t_x)
-    t_y = np.array(t_y)
-    t_p = np.array(t_p)
-    t_y = t_y.reshape([xdim, ydim])
-    t_x = t_x.reshape([-1, xdim, ydim, 3])
-    t_p = t_p.reshape([-1])
-    return t_x, t_y, t_p
-
-
 def my_loss_cat(y_true, y_pred):
     class_factor = [1.1603, 0.50832, 5.8513]
     CE = 0.0
@@ -127,37 +106,6 @@ def my_loss_cat(y_true, y_pred):
         CE += tf.reduce_sum(tf.multiply(y_true[:, :, :, c], tf.cast(
             tf.math.log(y_pred[:, :, :, c]), tf.float32))) * scale_factor * class_factor[c]
     return CE * -1 * 3
-
-
-def Cardiac_Model():
-    global image_num
-    global lock
-    dataPath_m = '/home/silver/TBI/NPFiles/Disp/TestingData2.npy'
-    pathNames_path = '/home/silver/TBI/NPFiles/Disp/TestingPaths2.npy'
-    data_m = np.load(dataPath_m)
-    pathNames = np.load(pathNames_path)
-    processes = []
-    # pathLen = len(pathNames) / 10
-    pathLen = len(pathNames)
-    tmpcnt = 0
-    lock = multiprocessing.Lock()
-    while image_num < pathLen:
-        while image_num < tmpcnt + 16 and image_num < pathLen:
-            if image_num >= pathLen:
-                break
-            lock.acquire()
-            [testX, testY] = preProcess2(data_m, xdim=256, ydim=80)
-            lock.release()
-            p = multiprocessing.Process(target=PolarProcess, args=(testX, testY, pathNames[image_num]))
-            p.start()
-            processes.append(p)
-            print("Process Create")
-            image_num += 1
-        for process in processes:
-            process.join()
-        tmpcnt = tmpcnt + 16
-        print(tmpcnt)
-    print(tmpcnt)
 
 
 def Polar_Model(sAll=False, use_brainMask=False):
@@ -174,8 +122,8 @@ def Polar_Model(sAll=False, use_brainMask=False):
     # get path to processed test data
     #dataPath_m = os.path.join(path_to_data, 'TestingData.npy')
     #pathNames_path = os.path.join(path_to_data, 'TestingPaths.npy')
-    dataPath_m = os.path.join(config.PROCESSED_NUMPY_PATH, 'bleed', 'TestingData.npy')
-    pathNames_path = os.path.join(config.PROCESSED_NUMPY_PATH, 'bleed', 'TestingPaths.npy')
+    dataPath_m = os.path.join(config.PROCESSED_NUMPY_PATH, 'pizza_IPH', '9', 'TestingData.npy')
+    pathNames_path = os.path.join(config.PROCESSED_NUMPY_PATH, 'pizza_IPH', '9', 'TestingPaths.npy')
 
     data_m = np.load(dataPath_m)
     pathNames = np.load(pathNames_path)
@@ -232,7 +180,7 @@ def PolarProcess(testX, testY, name, use_brainMask=False ,bMode=None, paths=None
                                                             # 'add_ons>AdamW': tfa.optimizers.AdamW})
     else:
         # when using the brain mask from CT scan
-        SegNet = tf.keras.models.load_model(os.path.join(config.TRAINED_MODELS_PATH, "ResNeSt"),
+        SegNet = tf.keras.models.load_model(os.path.join(config.TRAINED_MODELS_PATH, "ResNeSt_pizza_T9"),
                                         custom_objects={'my_loss_cat': my_loss_cat})
 
     prob, _ = SegNet(testX)

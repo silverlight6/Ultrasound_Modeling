@@ -23,12 +23,13 @@ def output2DImages(iteration):
     trainingPaths = manager.list()
     testingPaths = manager.list()
 
-    IPH_patients = [8, 9, 10, 12, 24, 47, 53, 62, 66, 67, 69, 74, 75, 78, 85, 89, 93,
+    IPH_patients = [8, 9, 10, 12, 22, 47, 53, 62, 66, 67, 69, 74, 75, 78, 85, 89, 93,
                     101, 105, 107, 110, 112, 113, 120, 121, 126, 129, 130, 133]
-    bad_patients = [1, 14, 22, 23, 27, 28, 32, 34, 35, 36, 37, 38, 39, 44, 49, 69, 71, 78, 82, 90, 98, 101, 121, 124,
-                    128, 133, 136, 928]
-    timeStart = np.zeros([100])
-    timeEnd = np.zeros([100])
+
+    bad_patients = [27, 28, 35, 36, 38, 49, 69, 90]
+
+    timeStart = np.zeros([200])
+    timeEnd = np.zeros([200])
     # counting files
     count = 0
 
@@ -172,13 +173,13 @@ def output2DImages(iteration):
     print("training {}".format(trainingData.shape))
     print("testing {}".format(testingData.shape))
 
-    savePath = os.path.join(config.PROCESSED_NUMPY_PATH, 'pizza_IPH')
+    savePath = os.path.join(config.PROCESSED_NUMPY_PATH)
     print("saved in : {}".format(savePath))
-    np.save(os.path.join(savePath, "TrainingData.npy"), trainingData)
-    np.save(os.path.join(savePath, "TestingData.npy"), testingData)
-    np.save(os.path.join(savePath, "TrainingPaths.npy"), trainingPaths)
-    np.save(os.path.join(savePath, "TestingPaths.npy"), testingPaths)
+    np.save(os.path.join(savePath, 'bleed', 'TrainingData.npy'), trainingData)
+    np.save(os.path.join(savePath, 'bleed', 'TestingData.npy'), testingData)
+    np.save(os.path.join(savePath, 'bleed', 'TrainingPaths.npy'), trainingPaths)
+    np.save(os.path.join(savePath, 'bleed', 'TestingPaths.npy'), testingPaths)
 
 
 if __name__ == '__main__':
-    output2DImages(0)
+    output2DImages(1)

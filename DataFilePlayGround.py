@@ -252,7 +252,7 @@ def output2DImages(iteration, objective, rawDataPath, savePath):
         dataFolder = os.path.join(savePath, "brainMask")
     else:
         # save the data used to identify blood
-        dataFolder = os.path.join(savePath, "blood")
+        dataFolder = os.path.join(savePath, "bleed")
 
     # create folder to store processed data if not yet exists, else move on
     try:
@@ -273,7 +273,7 @@ def output2DImages(iteration, objective, rawDataPath, savePath):
     testingPaths = manager.list()
     # validationPaths = manager.list()
 
-    IPH_patients = [8, 9, 10, 12, 24, 47, 53, 62, 66, 67, 69, 74, 75, 78, 85, 89, 93,
+    IPH_patients = [8, 9, 10, 12, 22, 47, 53, 62, 66, 67, 69, 74, 75, 78, 85, 89, 93,
                     101, 105, 107, 110, 112, 113, 120, 121, 126, 129, 130, 133]
     bad_patients = [1, 14, 22, 23, 27, 28, 32, 34, 35, 36, 37, 38, 39, 44, 49, 69, 71, 78, 82, 90, 98, 101, 121, 124,
                     128, 133, 136, 928]
@@ -333,7 +333,7 @@ def output2DImages(iteration, objective, rawDataPath, savePath):
                     label = np.where(brainMask == 0, 0, 1)
                 else:
                     # Finding the blood, brain, and outside brain masks
-                    label = np.where(bloodMask > normalMask, 2, 1)
+                    label = np.where(bloodMask > normalMask, 2, 1)                            # The bloodMask is not resized. Questionable?
                     label = label.astype('float32')
                     label = cv2.GaussianBlur(src=label, ksize=(9, 9), sigmaX=4)
                     label = np.where(bloodMask > normalMask, 2, label)
@@ -499,9 +499,9 @@ if __name__ == '__main__':
     #path to saved processed data
     savePath = config.PROCESSED_NUMPY_PATH
     # process data and label to identify brain / no brain
-    output2DImages(4, 0, rawDataPath, savePath)
+    output2DImages(1, 0, rawDataPath, savePath)
     # process data and labels to identify blood
-    output2DImages(4, 1, rawDataPath, savePath)
+    output2DImages(1, 1, rawDataPath, savePath)
 
     # save data for displaying the ultrasound cone
     axisPath = os.path.join(config.PROCESSED_NUMPY_PATH, "axis")
@@ -510,8 +510,8 @@ if __name__ == '__main__':
             os.mkdir(axisPath)
         except OSError as error:
             print(error)
-        rand_input_file = random.choice(os.listdir(os.path.join(rawDataPath, "DoD001")))
-        rand_input_file = os.path.join(rawDataPath, "DoD001", rand_input_file)
+        rand_input_file = random.choice(os.listdir(os.path.join(rawDataPath, "DoD009")))
+        rand_input_file = os.path.join(rawDataPath, "DoD009", rand_input_file)
         FetchPolarAxis(rand_input_file, axisPath)
 
 

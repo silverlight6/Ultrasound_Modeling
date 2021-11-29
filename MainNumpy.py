@@ -5,7 +5,7 @@ import os
 from Dataset_2 import Dataset
 from VisionTransformer import VisionTransformer
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"   # THIS LINE MUST BE REWRITTEN DEPENDING ON THE AVAILABLE GPUs
 wDecay = None
 
 
@@ -35,7 +35,7 @@ class Process(object):
         prev_loss = 0
         # tf.keras.utils.plot_model(neuralnet.resModel, to_file='ResNeSt.png', show_shapes=True)
 
-        for epoch in range(epochs):
+        for epoch in range(1, epochs + 1):
             while True:
                 # Get the data for the next batch
                 x_tr, y_tr, terminator = dataset.next_train(self.batch_size)  # y_tr does not used in this prj.
@@ -147,16 +147,16 @@ class Process(object):
 
 def main():
     # number of classes in the model
-    num_classes = 2
+    num_classes = 3
 
     if num_classes == 2:
         train_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'brainMask','TrainingData.npy')
         val_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'brainMask','TestingData.npy')
         saved_model_path = os.path.join(config.TRAINED_MODELS_PATH, 'ResNeSt_brainMask')
     else:
-        train_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'blood','TrainingData.npy')
-        val_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'blood','TestingData.npy')
-        saved_model_path = os.path.join(config.TRAINED_MODELS_PATH, 'ResNeSt_T0')
+        train_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'bleed','TrainingData.npy')
+        val_data = os.path.join(config.PROCESSED_NUMPY_PATH, 'bleed', 'TestingData.npy')
+        saved_model_path = os.path.join(config.TRAINED_MODELS_PATH, 'ResNeSt')
 
     dataset = Dataset(train_data, val_data, num_classes)
     # config = tf.estimator.RunConfig(train_distribute=mirrored_strategy)
@@ -169,7 +169,7 @@ def main():
     # print(neuralnet.visionModel.summary())
     print(len(neuralnet.visionModel.layers))
     process = Process(batch_size=batch_size, num_classes=num_classes)
-    process.training(neuralnet=neuralnet, dataset=dataset, epochs=51)
+    process.training(neuralnet=neuralnet, dataset=dataset, epochs=5)  #51
 
     # save the model
     neuralnet.visionModel.save(saved_model_path)
