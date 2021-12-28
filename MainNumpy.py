@@ -8,13 +8,15 @@ from VisionTransformer import VisionTransformer
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"   # THIS LINE MUST BE REWRITTEN DEPENDING ON THE AVAILABLE GPUs
 wDecay = None
 
+# size of the input images
+input_size = (256, 80)
 
 class Process(object):
     def __init__(self, batch_size=16, num_classes=3):
         self.summary_writer = tf.summary.create_file_writer(
             "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
         self.batch_size = batch_size
-        self.input_shape = [256, 80, 10]
+        self.input_shape = [input_size[0], input_size[1], 10]                                             # originally [256, 80, 10] 
         self.precision = tf.keras.metrics.Precision(name='precision')
         self.recall = tf.keras.metrics.Recall(name='recall')
         self.pre_c2 = tf.keras.metrics.Precision(name='precision_c2')
@@ -162,14 +164,14 @@ def main():
     # config = tf.estimator.RunConfig(train_distribute=mirrored_strategy)
     # with mirrored_strategy.scope():
     batch_size = 32
-    neuralnet = VisionTransformer(batch_size, num_classes=num_classes)
+    neuralnet = VisionTransformer(batch_size, img_size=input_size, num_classes=num_classes)
 
     # tf.keras.utils.model_to_dot(neuralnet.visionModel, to_file='TransUNet_dot.png', show_shapes=True)
 
     # print(neuralnet.visionModel.summary())
     print(len(neuralnet.visionModel.layers))
     process = Process(batch_size=batch_size, num_classes=num_classes)
-    process.training(neuralnet=neuralnet, dataset=dataset, epochs=5)  #51
+    process.training(neuralnet=neuralnet, dataset=dataset, epochs=50)
 
     # save the model
     neuralnet.visionModel.save(saved_model_path)

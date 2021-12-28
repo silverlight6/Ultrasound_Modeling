@@ -3,6 +3,8 @@ import tensorflow as tf
 from ResNest import ResNest
 from Decoder import DecoderCup
 
+# size of input images
+input_size = (256, 80)
 
 class Attention(tf.Module):
     def __init__(self, num_heads=4, attention_head_size=512, attention_dropout_rate=0.0, wDecay=None):
@@ -95,7 +97,7 @@ class Embeddings(tf.Module):
         # # This line is going to the ResNest model. Change this line out if using 1 or 3d input and are wanting to
         # # use a transfer learning network.
         # self.hybrid_model = ResNetV2(block_units=(3, 4, 9), width_factor=1)
-        self.hybrid_model = ResNest(256, 80, 10, radix=3, ksize=3, kpaths=3)
+        self.hybrid_model = ResNest(img_size[0], img_size[1], 10, radix=3, ksize=3, kpaths=3)
         # self.hybrid_model = SwinTransformer(model_name='swin_large_patch4_window7_384', img_size=self.img_size,
         #                                     in_chans=10)
         # Try using a reshape instead of a convolution later on.
@@ -110,7 +112,9 @@ class Embeddings(tf.Module):
     def forward(self, x):
         x, features = self.hybrid_model(x)
         x = self.patch_embeddings(x)  # (B, hidden. grid[0], grid[1])
+        print("x shape", x.shape)
         x = tf.reshape(x, [-1, self.seq_len, self.hidden_size])
+        print("x shape", x.shape)
         embeddings = x + self.position_embeddings
         embeddings = self.dropout(embeddings)
         return embeddings, features

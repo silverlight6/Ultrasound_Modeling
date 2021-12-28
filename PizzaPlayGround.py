@@ -5,6 +5,7 @@ import cv2                          # resize
 import math
 import multiprocessing
 import time
+import random
 import matplotlib
 from sklearn.utils import shuffle   # shuffle seed
 
@@ -12,6 +13,26 @@ from matplotlib import pyplot as plt
 from scipy.io import loadmat
 
 matplotlib.use('Agg')
+
+# image size as input to model after preprocessing
+input_size = (80, 256)
+
+
+def FetchPolarAxis(datapath, axisPath):
+    Harmonics = loadmat(datapath)
+
+    xaxis = np.array(list(Harmonics['xAxis']))
+    yaxis = np.array(list(Harmonics['zAxis']))
+
+    xaxis = cv2.resize(xaxis, input_size, interpolation=cv2.INTER_AREA)
+    yaxis = cv2.resize(yaxis, input_size, interpolation=cv2.INTER_AREA)
+
+    xaxis += 100
+    yaxis -= 4
+
+    print("saved axis info in : {}".format(axisPath))
+    np.save(os.path.join(axisPath, "xAxis.npy"), xaxis)
+    np.save(os.path.join(axisPath, "yAxis.npy"), yaxis)
 
 
 def output2DImages(iteration):
@@ -71,12 +92,12 @@ def output2DImages(iteration):
                 label = bloodMask + 1
                 label = label.astype('float32')
                 # print(label.shape)
-                brainMask = cv2.resize(brainMask, (80, 256))
-                label = cv2.resize(label, (80, 256))
+                brainMask = cv2.resize(brainMask, input_size)
+                label = cv2.resize(label, input_size)
                 label = np.where(brainMask == 0, 0, label)
                 # # This code is for finding the mask
                 # label = np.where(brainMask == 0, 0, 1)
-                label = label.reshape([256, 80, 1])
+                label = label.reshape([input_size[1], input_size[0], 1])
                 cycles = real.shape[-1]
                 real = real.astype('float64')
                 imag = imag.astype('float64')
@@ -98,16 +119,16 @@ def output2DImages(iteration):
                     safe_max[safe_max == 0] = 1
                     imagO = imagO / safe_max
 
-                    realO = cv2.resize(realO, (80, 256))
-                    imagO = cv2.resize(imagO, (80, 256))
-                    bModeO = cv2.resize(bModeO, (80, 256))
+                    realO = cv2.resize(realO, input_size)
+                    imagO = cv2.resize(imagO, input_size)
+                    bModeO = cv2.resize(bModeO, input_size)
 
                     # delete non-brain from input data
                     for i in range(0, realO.shape[-1]):
                         realO[:, :, i] = np.where(brainMask == 0, 0.0, realO[:, :, i])
                         imagO[:, :, i] = np.where(brainMask == 0, 0.0, imagO[:, :, i])
 
-                    bModeO = bModeO.reshape([256, 80, 1])
+                    bModeO = bModeO.reshape([input_size[1], input_size[0], 1])
 
                     # concatenate the columns into one structure
                     image = np.concatenate((label, realO, imagO, bModeO), axis=2)
@@ -183,3 +204,16 @@ def output2DImages(iteration):
 
 if __name__ == '__main__':
     output2DImages(1)
+
+    # save data for displaying the ultrasound cone
+    savePath = os.path.join(config.PROCESSED_NUMPY_PATH)
+    axisPath = os.path.join(savePath, "axis")
+    if not os.path.isdir(axisPath):
+        try:
+            os.mkdir(axisPath)
+        except OSError as error:
+            print(error)
+        rand_patient = random.choice(os.listdir(rawDataPath))
+        rand_input_file = random.choice(os.listdir(os.path.join(rawDataPath, rand_patient)))
+        rand_input_file = os.path.join(rawDataPath, rand_patient, rand_input_file)
+        FetchAxis(rand_input_file, axisPath)
